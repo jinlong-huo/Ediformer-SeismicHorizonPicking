@@ -11,7 +11,7 @@ import numpy as np
 # 权重初始化
 def weight_init(m):
     if isinstance(m, (nn.Conv2d,)):
-        torch.nn.init.xavier_normal_(m.weight, gain=1.0) 
+        torch.nn.init.xavier_normal_(m.weight, gain=1.0) # 这里改过
         # torch.nn.init.kaiming_normal(m.weight)
 
         if m.weight.data.shape[1] == torch.Size([1]):
@@ -22,7 +22,7 @@ def weight_init(m):
 
     # for fusion layer
     if isinstance(m, (nn.ConvTranspose2d,)):
-        torch.nn.init.xavier_normal_(m.weight, gain=1.0) 
+        torch.nn.init.xavier_normal_(m.weight, gain=1.0) # 这里改过
         # torch.nn.init.kaiming_normal(m.weight)
         if m.weight.data.shape[1] == torch.Size([1]):
             torch.nn.init.normal_(m.weight, std=0.1)
@@ -41,7 +41,7 @@ class CoFusion(nn.Module):
                                stride=1, padding=1)
         self.conv3 = nn.Conv2d(64, out_ch, kernel_size=1,
                                stride=1, padding=1)
-        self.relu = nn.ReLU()   
+        self.relu = nn.ReLU()   # ReLU的激活层
 
         self.norm_layer1 = nn.GroupNorm(4, 64)
         self.norm_layer2 = nn.GroupNorm(4, 64)
@@ -97,7 +97,7 @@ class UpConvBlock(nn.Module):
 
     def make_deconv_layers(self, in_features, up_scale):
         layers = []
-        all_pads=[0,0,1,3,7]    
+        all_pads=[0,0,1,3,7]    # pad选取
         for i in range(up_scale):
             kernel_size = 2 ** up_scale
             pad = all_pads[up_scale]  # kernel_size-1
@@ -149,7 +149,7 @@ class DoubleConvBlock(nn.Module):
                                (1, 3), padding=(0, 1), stride=stride) 
         
         self.bn1 = nn.BatchNorm2d(mid_features)
-        self.conv2 = nn.Conv2d(mid_features, out_features, (1,3), padding=(0, 1)) # 
+        self.conv2 = nn.Conv2d(mid_features, out_features, (1,3), padding=(0, 1)) # 这里的（1，3）就是kernal_size
         self.bn2 = nn.BatchNorm2d(out_features)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)  
@@ -201,7 +201,7 @@ class DexiNed(nn.Module):
         self.up_block_5 = UpConvBlock(512, 4)
         self.up_block_6 = UpConvBlock(256, 4)
         self.block_cat = SingleConvBlock(6, 7, stride=1, use_bs=False)  # hed fusion method
-        # self.conv3 = nn.Conv2d(in_channels=7, out_channels=1, kernel_size=1, stride=1, padding=0, bias=True
+        # self.conv3 = nn.Conv2d(in_channels=7, out_channels=1, kernel_size=1, stride=1, padding=0, bias=True) 这里先不改
         # self.block_cat = CoFusion(6,6)# cats fusion method
 
         self.apply(weight_init)
@@ -281,17 +281,17 @@ class DexiNed(nn.Module):
         out_5 = self.up_block_5(block_5)
         
 
-        out_6 = self.up_block_6(block_6)       
+        out_6 = self.up_block_6(block_6)       # 在这里所有的通道数都是1 而 高度和宽度都是设置值
         
 
         results = [out_1, out_2, out_3, out_4, out_5, out_6]
 
         # concatenate multiscale outputs      
-        block_cat = torch.cat(results, dim=1)  # 
+        block_cat = torch.cat(results, dim=1)  # Bx6xHxW 按列拼接所以行数要相同  问题out_*的shape H部分不一致
 
-        block_cat = self.block_cat(block_cat)  # Bx1xHxW# 
+        block_cat = self.block_cat(block_cat)  # Bx1xHxW # 1*1卷积 通道数改变
 
-        # block_cat = self.conv3(block_cat)      # Bx1xHxW 
+        # block_cat = self.conv3(block_cat)      # Bx1xHxW # 这里先不改变网络模式
         # return results
         results.append(block_cat)
         # print('**********',block_cat.shape)
