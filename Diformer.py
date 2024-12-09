@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import os
-import torch.optim as optim
-# import tensorflow as tf
-import json
 import numpy as np
-import math
+
+from timm.models.layers import PatchEmbed, Mlp, DropPath, trunc_normal_, lecun_normal_, to_2tuple
+
 
 # 权重初始化
 def weight_init(m):
@@ -164,7 +162,6 @@ class DoubleConvBlock(nn.Module):
             x = self.relu(x)
 
         return x
-
 
 
 class PatchEmbed(nn.Module):
