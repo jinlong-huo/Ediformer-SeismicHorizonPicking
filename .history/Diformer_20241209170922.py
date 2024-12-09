@@ -5,6 +5,8 @@ import numpy as np
 
 from timm.models.layers import PatchEmbed, Mlp, DropPath, trunc_normal_, lecun_normal_, to_2tuple
 
+
+# 权重初始化
 def weight_init(m):
     if isinstance(m, (nn.Conv2d,)):
         torch.nn.init.xavier_normal_(m.weight, gain=1.0) 
@@ -355,7 +357,7 @@ class DropPath(nn.Module):
         return f'drop_prob={round(self.drop_prob,3):0.3f}'
 
 
-class Diformer(nn.Module):
+class DexiNed(nn.Module):
     """ Definition of the DXtrem network. """
 
     # def __init__(self):
@@ -363,7 +365,7 @@ class Diformer(nn.Module):
                  attention_head=1, pool_size=2, norm_layer=nn.LayerNorm,
                  attn=Mixer):
         
-        super(Diformer, self).__init__()                           
+        super(DexiNed, self).__init__()                           
         self.block_1 = DoubleConvBlock(1, 32, 64, stride=2,)  # Change into 1 Channel
         self.block_2 = DoubleConvBlock(64, 128, stride=1, use_act=False)
         self.dblock_3 = _DenseBlock(2, 128, 256) # [128,256,100,100]
@@ -517,7 +519,7 @@ if __name__ == '__main__':
     print(f"input shape: {input.shape}")
     embed_dims = [72, 36, 36, 36] # embed dim last dim
     heads = 2
-    model = Diformer(dim=embed_dims, num_heads=heads).to(device)
+    model = DexiNed(dim=embed_dims, num_heads=heads).to(device)
     output = model(input)
     # print(output[0].shape)
     print(f"output shapes: {[t.shape for t in output]}")
