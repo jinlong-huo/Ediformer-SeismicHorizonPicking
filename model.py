@@ -361,7 +361,7 @@ class Diformer(nn.Module):
     # def __init__(self):
     def __init__(self, dim, num_heads, qkv_bias=False, attn_drop=0., drop_path=0.,
                  attention_head=1, pool_size=2, norm_layer=nn.LayerNorm,
-                 attn=Mixer):
+                 attn=Mixer, feature_projection_dim=288):
         
         super(Diformer, self).__init__()                           
         self.block_1 = DoubleConvBlock(1, 32, 64, stride=2,)  # Change into 1 Channel
@@ -395,6 +395,7 @@ class Diformer(nn.Module):
         self.up_block_5 = UpConvBlock(512, 3)
         self.up_block_6 = UpConvBlock(256, 3)
         self.block_cat = SingleConvBlock(6, 7, stride=1, use_bs=False)  # hed fusion method
+        # self.feature_projection = nn.Linear(prev_dim, 288)
         
         # we use different dims to normalize and conduct attention computation
         self.norm1 = norm_layer(dim[0])
@@ -413,6 +414,7 @@ class Diformer(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         
         self.apply(weight_init)
+        self.feature_projection = nn.Linear(dim[-1], feature_projection_dim)
         # self.linear = torch.nn.Linear(288, 7)
 
     def slice(self, tensor, slice_shape):
@@ -491,10 +493,15 @@ class Diformer(nn.Module):
   
         block_cat = torch.cat(results, dim=1)  
         results = self.block_cat(block_cat)   
+        projected_features = self.feature_projection(block_6.mean(dim=[2, 3]))
+        return results, projected_features
 
-        return results
-
-
+    def get_projected_features(self, x):
+        """
+        Method specifically for extracting projected features
+        """
+        _, projected_features = self(x)
+        return projected_features
 # if __name__ == '__main__':
 #     batch_size = 2                                                                  
 #     img_height = 1    # 1   352
