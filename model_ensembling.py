@@ -39,19 +39,11 @@ class AdvancedEnsembleLearner:
     def __init__(self, dim: List[Dict], num_heads: List[Dict], attribute_configs: List[Dict], num_classes: int = 7, num_classifiers:int = 4):
         self.num_classes = num_classes
         
-        # Initialize classifiers for each attribute
-        # self.classifiers = nn.ModuleList([
-        #     SeismicAttributeClassifier(
-        #         input_dim=config['input_dim'], 
-        #         feature_dim=config.get('feature_dim', 128),
-        #         num_classes=num_classes
-        #     ) for config in attribute_configs
-        # ])
-        
         self.classifiers = nn.ModuleList([
             Diformer(
                 dim=dim, 
                 num_heads=num_heads,
+                feature_projection_dim=feature_projection_dim
             ) for _ in range(num_classifiers)
         ])
         
