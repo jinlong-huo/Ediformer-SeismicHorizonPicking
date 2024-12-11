@@ -10,7 +10,7 @@ import csv
 
 from torch.autograd import Variable
 from torch.cuda.amp import autocast as autocast
-from DOD_1D_model import DexiNed
+from model import Diformer
 from torch import nn
 
 torch.set_printoptions(profile="full")   # 全输出
@@ -24,8 +24,8 @@ class MyDataset(Dataset.Dataset):
         self.Label = Label
 
     def __getitem__(self, idx):
-        data = torch.Tensor(self.Data[idx])  # .permute(0, 2, 1)
-        label = torch.IntTensor(self.Label[idx])  # .permute(1, 0)   # (7, 288) 读出来是有问题的 index的值和batch_size的值相等了
+        data = torch.Tensor(self.Data[idx])  
+        label = torch.IntTensor(self.Label[idx])  
 
         return data, label
 
@@ -158,6 +158,7 @@ def validate_one_epoch(dataloader, model):
         val_loss, val_acc))
     return
 
+
 def np_extend(a, b, axis = 0):
     if a is None:
         shape = list(b.shape)
@@ -191,11 +192,6 @@ def test(checkpoint_path, dataloader, model, device, output_dir):
             test_data = Variable(test_data).cuda()            # 放入variable 可以用gpu跑
             test_label = Variable(test_label).cuda()
 
-            # print(test_label[19], batch_id)            # 输出正常
-            # test_label = test_label.permute(0, -1, 1)  # (571551, 288, 7)-->(571551, 7, 288)
-            # label = torch.argmax(label, -2)  # this is the most important !!!!!!!!!!(20,288)!!!!!!!!!!!!!!!!!!!!!!!!!! 等价dim=2
-            # test_label = torch.unsqueeze(test_label, dim=-2)  # (20, 1, 288) 到这里label输出成列 增加一个维度（20，7，1，288）
-
             test_data = test_data.permute(0, 1, 3, 2)         # (571551, 1, 288, 1)-->(571551, 1, 1, 288)
             test_data = torch.squeeze(test_data, -1)          # 改为test
             test_label = torch.unsqueeze(test_label, dim=-2)  # (571551, 288, 7)-->(571551, 288, 1, 7)
@@ -203,12 +199,12 @@ def test(checkpoint_path, dataloader, model, device, output_dir):
             # test_label = torch.argmax(test_label, 1)          # (571551, 7, 1, 288)-->(571551, 1 ,1, 288)
             pred_label = model(test_data)
             _, predicted = torch.max(pred_label[6].data, 1)   # (20, 1 ,288)
-            # print(predicted.shape)
+            
             temp = predicted
-            # 下面这句话是把所有的数组都拼接起来 如果要快速test记得注释！！！！！！
+            
             predicted_label = np_extend(predicted_label, temp.cpu())
-            # print(test_data.shape, test_label.shape)        # torch.Size([100, 1, 288, 1]) torch.Size([100, 288])
-            # 加上weight看下
+            
+            
             l_weight = torch.tensor(l_weight, requires_grad=True)
             l_weight = Variable(l_weight).cuda()
             criterion = nn.CrossEntropyLoss(l_weight)
@@ -221,13 +217,13 @@ def test(checkpoint_path, dataloader, model, device, output_dir):
             pred_label[6] = pred_label[6].view(-1,n_classes)
 
             pre_mask = torch.zeros(pred_label[6].size()).scatter_(1, predicted.cpu().view(-1, 1), 1.)
-            predict_num += pre_mask.sum(0)  # 得到数据中每类的预测量
+            predict_num += pre_mask.sum(0) 
             test_label = test_label.long()
-            # print(type(predicted), type(test_data))
+            
             tar_mask = torch.zeros(pred_label[6].size()).scatter_(1, test_label.data.cpu().view(-1, 1), 1.)
-            target_num += tar_mask.sum(0)  # 得到数据中每类的数量
+            target_num += tar_mask.sum(0)  
             acc_mask = pre_mask * tar_mask
-            acc_num += acc_mask.sum(0)  # 得到各类别分类正确的样本数量
+            acc_num += acc_mask.sum(0)  
         recall = acc_num / target_num
         precision = acc_num / predict_num + float('1e-8')
         F1 = 2 * recall * precision / (recall + precision)
@@ -237,19 +233,20 @@ def test(checkpoint_path, dataloader, model, device, output_dir):
         print('precision {}'.format(precision))
         print('F1-score {}'.format(F1))
 
-    # if batch_id > 0 and batch_id % 2500 == 0:
+    
         print('Test loss:', test_loss)
         print('Accuracy of the network:', (100*(correct / (total*288))))
         print('Begin Writing!')
         row_len = len(predicted_label)
-        # 下次命名时要把label放最后面。因为transform_data里面是要通过mode来提取参数。
+        
         with open(output_dir+'test_pred_5_12_1_label.csv', 'w', encoding='UTF8', newline='') as f:
             writer = csv.writer(f)
             for i in range(row_len):
                 data_list = predicted_label[i]
-                # for j in range(column_len):
+                
                 writer.writerow(data_list[0])
         return correct
+
 
 def main(args):
     stime = time.time()
@@ -261,7 +258,7 @@ def main(args):
 
     device = torch.device('cpu' if torch.cuda.device_count() == 0
                           else 'cuda')
-    model = DexiNed().to(device)
+    model = Diformer().to(device)
     # checkpoint_path = checkpoint_dir
     if not args.is_testing:
         print('*********is training *********')
@@ -273,6 +270,7 @@ def main(args):
 
         Data = np.load(r'D:\Pycharm Projects\Horizon_Picking\9_20_patch_reshape_back.npy')
         Label = np.load(r'D:\Pycharm Projects\Horizon_Picking\data\test_label_no_ohe.npy')
+        
         print(Data.shape, Label.shape)
         Data = Data.reshape(-1, 1, 288)
         Label = Label.reshape(-1, 1, 288)

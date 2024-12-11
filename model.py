@@ -340,19 +340,19 @@ def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: b
         random_tensor.div_(keep_prob)
     return x * random_tensor
 
-class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
-    """
-    def __init__(self, drop_prob: float = 0., scale_by_keep: bool = True):
-        super(DropPath, self).__init__()
-        self.drop_prob = drop_prob
-        self.scale_by_keep = scale_by_keep
+# class DropPath(nn.Module):
+#     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
+#     """
+#     def __init__(self, drop_prob: float = 0., scale_by_keep: bool = True):
+#         super(DropPath, self).__init__()
+#         self.drop_prob = drop_prob
+#         self.scale_by_keep = scale_by_keep
 
-    def forward(self, x):
-        return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
+#     def forward(self, x):
+#         return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
 
-    def extra_repr(self):
-        return f'drop_prob={round(self.drop_prob,3):0.3f}'
+#     def extra_repr(self):
+#         return f'drop_prob={round(self.drop_prob,3):0.3f}'
 
 
 class Diformer(nn.Module):
@@ -489,36 +489,27 @@ class Diformer(nn.Module):
         
         results = [out_1, out_2, out_3, out_4, out_5, out_6]
   
-        block_cat = torch.cat(results, dim=1)  # 
-        block_cat = self.block_cat(block_cat)  # Bx1xHxW# 
+        block_cat = torch.cat(results, dim=1)  
+        results = self.block_cat(block_cat)   
 
-        # block_cat = self.conv3(block_cat)      # Bx1xHxW 
-        # return results
-        # print('**********',block_cat.shape)
-        # another linear layer for test
-        # results[6] = results[6].view(-1, 288)
-        # results[6] = F.relu(self.linear(results[6]))
-     
-        results.append(block_cat)
-        
         return results
 
 
-if __name__ == '__main__':
-    batch_size = 2                                                                  
-    img_height = 1    # 1   352
-    img_width = 288   # 288 352
+# if __name__ == '__main__':
+#     batch_size = 2                                                                  
+#     img_height = 1    # 1   352
+#     img_width = 288   # 288 352
     
-    # print
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
-    input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
-    # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
-    print(f"input shape: {input.shape}")
-    embed_dims = [72, 36, 36, 36] # embed dim last dim
-    heads = 2
-    model = Diformer(dim=embed_dims, num_heads=heads).to(device)
-    output = model(input)
-    # print(output[0].shape)
-    print(f"output shapes: {[t.shape for t in output]}")
+#     # print
+#     device = "cuda:1" if torch.cuda.is_available() else "cpu"
+#     # device = "cpu"
+#     input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
+#     # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
+#     print(f"input shape: {input.shape}")
+#     embed_dims = [72, 36, 36, 36] # embed dim last dim
+#     heads = 2
+#     model = Diformer(dim=embed_dims, num_heads=heads).to(device)
+#     output = model(input)
+#     # print(output[0].shape)
+#     print(f"output shapes: {output.shape}")
 
