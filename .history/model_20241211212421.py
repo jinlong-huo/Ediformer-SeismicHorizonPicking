@@ -296,7 +296,7 @@ class Mixer(nn.Module):
         self.high_dim = high_dim = dim - low_dim
         
         self.high_mixer = HighMixer(high_dim)
-        self.low_mixer = LowMixer(low_dim, num_heads=attention_head, qkv_bias=qkv_bias, attn_drop=attn_drop, pool_size=pool_size)
+        self.low_mixer = LowMixer(low_dim, num_heads=attention_head, qkv_bias=qkv_bias, attn_drop=attn_drop, pool_size=pool_size,)
 
         self.conv_fuse = nn.Conv2d(low_dim+high_dim*2, low_dim+high_dim*2, kernel_size=3, stride=1, padding=1, bias=False, groups=low_dim+high_dim*2)
         self.proj = nn.Conv2d(low_dim+high_dim*2, dim, kernel_size=1, stride=1, padding=0)
@@ -361,7 +361,7 @@ class Diformer(nn.Module):
     # def __init__(self):
     def __init__(self, dim, num_heads, qkv_bias=False, attn_drop=0., drop_path=0.,
                  attention_head=1, pool_size=2, norm_layer=nn.LayerNorm,
-                 attn=Mixer, feature_projection_dim=288):
+                 attn=Mixer):
         
         super(Diformer, self).__init__()                           
         self.block_1 = DoubleConvBlock(1, 32, 64, stride=2,)  # Change into 1 Channel
@@ -414,7 +414,6 @@ class Diformer(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         
         self.apply(weight_init)
-        self.feature_projection = nn.Linear(feature_projection_dim, feature_projection_dim)
         # self.linear = torch.nn.Linear(288, 7)
 
     def slice(self, tensor, slice_shape):
@@ -493,33 +492,25 @@ class Diformer(nn.Module):
   
         block_cat = torch.cat(results, dim=1)  
         results = self.block_cat(block_cat)   
-        # projected_features = self.feature_projection(results.mean(dim=[2, 3]))
-        projected_features = self.feature_projection(results)
-        
-        return results, projected_features
 
-    def get_projected_features(self, x):
-        """
-        Method specifically for extracting projected features
-        """
-        _, projected_features = self(x)
-        return projected_features
+        return results
 
-if __name__ == '__main__':
-    batch_size = 2                                                                  
-    img_height = 1    # 1   352
-    img_width = 288   # 288 352
+
+# if __name__ == '__main__':
+#     batch_size = 2                                                                  
+#     img_height = 1    # 1   352
+#     img_width = 288   # 288 352
     
-    # print
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
-    input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
-    # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
-    print(f"input shape: {input.shape}")
-    embed_dims = [72, 36, 36, 36] # embed dim last dim
-    heads = 2
-    model = Diformer(dim=embed_dims, num_heads=heads).to(device)
-    output = model(input)
-    # print(output[0].shape)
-    print(f"output shapes: {output.shape}")
+#     # print
+#     device = "cuda:1" if torch.cuda.is_available() else "cpu"
+#     # device = "cpu"
+#     input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
+#     # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
+#     print(f"input shape: {input.shape}")
+#     embed_dims = [72, 36, 36, 36] # embed dim last dim
+#     heads = 2
+#     model = Diformer(dim=embed_dims, num_heads=heads).to(device)
+#     output = model(input)
+#     # print(output[0].shape)
+#     print(f"output shapes: {output.shape}")
 

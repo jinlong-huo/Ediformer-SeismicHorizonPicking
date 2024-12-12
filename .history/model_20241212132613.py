@@ -504,7 +504,7 @@ class Diformer(nn.Module):
         """
         _, projected_features = self(x)
         return projected_features
-
+    
 if __name__ == '__main__':
     batch_size = 2                                                                  
     img_height = 1    # 1   352

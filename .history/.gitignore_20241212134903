@@ -1,6 +1,5 @@
 ./exploration-geophysics-mindmap.md
 ./train_seismic_origin_comment_part.py
-./model_ensembling_origin.py
 ./.history
 ./utils
 ./DOD_1D_main.py

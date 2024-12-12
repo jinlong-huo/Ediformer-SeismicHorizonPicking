@@ -493,8 +493,7 @@ class Diformer(nn.Module):
   
         block_cat = torch.cat(results, dim=1)  
         results = self.block_cat(block_cat)   
-        # projected_features = self.feature_projection(results.mean(dim=[2, 3]))
-        projected_features = self.feature_projection(results)
+        projected_features = self.feature_projection(results.mean(dim=[2, 3]))
         
         return results, projected_features
 
@@ -504,7 +503,7 @@ class Diformer(nn.Module):
         """
         _, projected_features = self(x)
         return projected_features
-
+    
 if __name__ == '__main__':
     batch_size = 2                                                                  
     img_height = 1    # 1   352
