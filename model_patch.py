@@ -429,7 +429,7 @@ class Diformer(nn.Module):
         # tensor[..., :height, :width]
         return new_tensor
 
-    def forward(self, x): 
+    def forward(self, x, extract_features=False): 
         assert x.ndim == 4, x.shape
        
         block_1 = self.block_1(x)
@@ -497,7 +497,10 @@ class Diformer(nn.Module):
         # projected_features = self.feature_projection(results.mean(dim=[2, 3]))
         projected_features = self.feature_projection(results)
         
-        return results, projected_features
+        if extract_features:
+            return projected_features
+        
+        return results
 
     def get_projected_features(self, x):
         """
@@ -523,5 +526,5 @@ if __name__ == '__main__':
     model = Diformer(dim=embed_dims, num_heads=heads).to(device)
     output = model(input)
     # print(output[0].shape)
-    print(f"output shapes: {output.shape}")
+    print(f"output shapes: {output[0].shape}") # ([2, 7, 64, 288])
 
