@@ -7,7 +7,7 @@ import time
 import torch.nn as nn
 import torch.optim as optim
 
-from model import Diformer
+from model_patch import Diformer
 from utils.datafactory import HorizonDataFactory
 
 
@@ -74,7 +74,10 @@ class AdvancedEnsembleLearner:
                        attribute_dataloaders: List, 
                        validation_dataloaders: List, 
                        epochs: int = 2, 
-                       learning_rate: float = 1e-3):
+                       learning_rate: float = 1e-3,
+                       height: int = 16,
+                       width: int = 288
+                       ):
         """
         Train meta-models and fusion model
         """
@@ -98,11 +101,12 @@ class AdvancedEnsembleLearner:
                 
                 for batch_x, batch_y in train_loader:
                     optimizer.zero_grad()
-                    
+                    # squeeze the first dimension to calculate loss
+                    batch_y = torch.squeeze(batch_y.long())
                     # Compute loss for individual classifier
-                    outputs = classifier(batch_x)
+                    outputs = classifier(batch_x) 
+                    # outputs / projected features shape torch.Size([16, 7, 64, 288])
                     loss = criterion(outputs, batch_y)
-                    
                     loss.backward()
                     optimizer.step()
                     
@@ -117,8 +121,10 @@ class AdvancedEnsembleLearner:
                 total = 0
                 with torch.no_grad():
                     for batch_x, batch_y in val_loader:
-                        outputs = classifier(batch_x)
-                        loss = criterion(outputs, batch_y)
+                        
+                        batch_y = torch.squeeze(batch_y.long())
+                        outputs = classifier(batch_x) # outputs: torch.Size([16, 7, 64, 288])
+                        loss = criterion(outputs, batch_y.long())
                         val_loss += loss.item()
                         
                         _, predicted = outputs.max(1)
@@ -138,7 +144,7 @@ class AdvancedEnsembleLearner:
                 classifier_labels = []
                 
                 for batch_x, batch_y in train_loader:
-                    # Extract features
+                    # Extract features  batch_x shape torch.Size([16, 1, 64, 288])
                     features = classifier(batch_x, extract_features=True)
                     classifier_features.append(features)
                     classifier_labels.append(batch_y)
@@ -146,14 +152,22 @@ class AdvancedEnsembleLearner:
                 all_features.append(torch.cat(classifier_features, dim=0))
                 all_labels.append(torch.cat(classifier_labels, dim=0))
             
-            # Concatenate features from all meta-models
+            # Concatenate features from all meta-models concatenate 2nd dimension to map channel into probs
             total_features = torch.cat(all_features, dim=1)
             final_labels = all_labels[0]  # Assume consistent labels across attributes
             
             # Train fusion model
             fusion_optimizer.zero_grad()
-            fusion_outputs = self.fusion_model(total_features)
-            fusion_loss = criterion(fusion_outputs, final_labels)
+            
+            # ================
+            # Simplify the fusion model for running all the process by letting total features as fusion model outputs
+            # fusion_outputs = self.fusion_model(total_features) # torch.Size([146, 14, 64, 288]) 14 --> 7 
+            # =================
+               
+            fusion_outputs = total_features
+            # squeeze and convert into long dtype
+            final_labels = torch.squeeze(final_labels)
+            fusion_loss = criterion(fusion_outputs, final_labels.long()) # labels shape torch.Size([146, 1, 64, 288])
             
             fusion_loss.backward()
             fusion_optimizer.step()
@@ -171,7 +185,8 @@ class AdvancedEnsembleLearner:
                     classifier_labels = []
                     
                     for batch_x, batch_y in val_loader:
-                        features = classifier(batch_x, extract_features=True)
+                        # features = classifier(batch_x, extract_features=True)
+                        features = classifier(batch_x)
                         classifier_features.append(features)
                         classifier_labels.append(batch_y)
                     
@@ -182,8 +197,10 @@ class AdvancedEnsembleLearner:
             total_val_features = torch.cat(val_features, dim=1)
             final_val_labels = val_labels[0]  # Assume consistent labels across attributes
             
-            val_outputs = self.fusion_model(total_val_features)
-            val_loss = criterion(val_outputs, final_val_labels)
+            # val_outputs = self.fusion_model(total_val_features)
+            val_outputs = total_val_features
+            final_val_labels = torch.squeeze(final_val_labels)
+            val_loss = criterion(val_outputs, final_val_labels.long())
             
             _, predicted = val_outputs.max(1)
             total = final_val_labels.size(0)
@@ -236,7 +253,8 @@ def main():
         {'input_dim': 288, 'feature_dim': 288},  # Attribute 2
         {'input_dim': 288, 'feature_dim': 288}   # Attribute 3
     ]
-    embed_dims = [16, 36, 36, 36]
+    # embed_dims = [16, 8, 8, 8]
+    embed_dims = [72, 36, 36, 36]
     heads = 2
     # Initialize Advanced Ensemble Learner
     ensemble_learner = AdvancedEnsembleLearner(
@@ -245,14 +263,14 @@ def main():
         attribute_configs=attribute_configs, 
         num_classes=7,
         num_classifiers=len(attribute_configs),
-        height=288,
-        width=1
+        height=args.height,
+        width=args.width
     )
     
     if args.is_training:
         print('*********is training *********')    
         # Train ensemble
-        ensemble_learner.train_ensemble(attribute_train_loaders, attribute_val_loaders, epochs=args.num_epochs)
+        ensemble_learner.train_ensemble(attribute_train_loaders, attribute_val_loaders, epochs=args.num_epochs, height=args.height, width=args.width)
     
     if args.is_testing:
         print('********* is testing *********')
@@ -274,6 +292,13 @@ def parse_args():
     
     parser.add_argument('--batch_size', type=int, default=16, 
                         help='Training batch size')
+    
+    parser.add_argument('--height', type=int, default=288, 
+                        help='data height size')
+    
+    parser.add_argument('--width', type=int, default=1, 
+                        help='data width size')
+
     
     parser.add_argument('--data_dir', type=str,  default='/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy', help='data dir')
     
