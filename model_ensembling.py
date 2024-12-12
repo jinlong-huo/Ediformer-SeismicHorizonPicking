@@ -15,7 +15,7 @@ class FeatureFusionModel(nn.Module):
     """
     Final model to fuse features from meta-models
     """
-    def __init__(self, total_feature_dim: int, num_classes: int = 2):
+    def __init__(self, total_feature_dim: int, num_classes: int, fusion_height, fusion_width):
         super().__init__()
         
         self.fusion_network = nn.Sequential(
@@ -26,35 +26,45 @@ class FeatureFusionModel(nn.Module):
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Linear(256, num_classes)
+            # map the last layer for final prediction
+            nn.Linear(256, num_classes * fusion_height * fusion_width) 
         )
     
     def forward(self, fused_features):
-        return self.fusion_network(fused_features)
+        
+        x = self.fusion_network(fused_features)
+        
+        return x.view(-1, self.num_classes, self.height, self.width)
+
 
 class AdvancedEnsembleLearner:
     """
     Advanced Ensemble Learning with Feature Fusion
     """
-    def __init__(self, dim: List[Dict], num_heads: List[Dict], attribute_configs: List[Dict], num_classes: int = 7, num_classifiers:int = 4):
+    def __init__(self, dim: List[Dict], num_heads: List[Dict], attribute_configs: List[Dict], num_classes: int, num_classifiers:int, height: int = 288, width: int = 1):
         self.num_classes = num_classes
+        self.height = height
+        self.width = width
         
         self.classifiers = nn.ModuleList([
             Diformer(
                 dim=dim, 
                 num_heads=num_heads,
-                feature_projection_dim=feature_projection_dim
+                feature_projection_dim=288
             ) for _ in range(num_classifiers)
         ])
         
-        # Initialize fusion model
+        # Initialize fusion model we define for 4 but only give 3 i.e., 3*288
         total_feature_dim = sum(
-            classifier.feature_projection.out_features 
+            classifier.feature_projection.out_features  # 288 aligned with feature projection dim
             for classifier in self.classifiers
         )
+        
         self.fusion_model = FeatureFusionModel(
             total_feature_dim=total_feature_dim, 
-            num_classes=num_classes
+            num_classes=num_classes,
+            fusion_height=height,
+            fusion_width=width
         )
         
         # Classifier weights
@@ -63,7 +73,7 @@ class AdvancedEnsembleLearner:
     def train_ensemble(self, 
                        attribute_dataloaders: List, 
                        validation_dataloaders: List, 
-                       epochs: int = 50, 
+                       epochs: int = 2, 
                        learning_rate: float = 1e-3):
         """
         Train meta-models and fusion model
@@ -212,7 +222,7 @@ def main():
     
     # attribute_names = ['seismic', 'freq', 'dip', 'rms', 'phase']
     attribute_names = ['freq', 'phase']
-    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 64), stride=(1, 64, 32))
+    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 64), stride=(1, 64, 32), batch_size=args.batch_size) # the resulting 
     
     # Example usage for the AdvancedEnsembleLearner
     attribute_dataloaders = data_factory.get_dataloaders(attribute_names)
@@ -226,21 +236,23 @@ def main():
         {'input_dim': 288, 'feature_dim': 288},  # Attribute 2
         {'input_dim': 288, 'feature_dim': 288}   # Attribute 3
     ]
-    embed_dims = [72, 36, 36, 36]
+    embed_dims = [16, 36, 36, 36]
     heads = 2
     # Initialize Advanced Ensemble Learner
     ensemble_learner = AdvancedEnsembleLearner(
         dim=embed_dims,
         num_heads=heads,
         attribute_configs=attribute_configs, 
-        num_classes=2,
-        num_classifiers=len(attribute_configs)
+        num_classes=7,
+        num_classifiers=len(attribute_configs),
+        height=288,
+        width=1
     )
     
     if args.is_training:
         print('*********is training *********')    
         # Train ensemble
-        ensemble_learner.train_ensemble(attribute_train_loaders, attribute_val_loaders)
+        ensemble_learner.train_ensemble(attribute_train_loaders, attribute_val_loaders, epochs=args.num_epochs)
     
     if args.is_testing:
         print('********* is testing *********')
@@ -256,6 +268,12 @@ def parse_args():
     
     parser.add_argument('--is_training', type=bool, default=True, 
                         help='Script in training mode')
+    
+    parser.add_argument('--num_epochs', type=int, default=3, 
+                        help='Overall training epochs')
+    
+    parser.add_argument('--batch_size', type=int, default=16, 
+                        help='Training batch size')
     
     parser.add_argument('--data_dir', type=str,  default='/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy', help='data dir')
     
