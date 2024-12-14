@@ -82,16 +82,20 @@ class HorizonDataFactory:
         labels = np.load(label_path)
         
         # Convert to tensors
-        data = torch.tensor(data, dtype=torch.float)
+        data = torch.tensor(data, dtype=torch.float) # 571551 288
         labels = torch.tensor(labels, dtype=torch.float)
         
         # Reshape
-        data = data.reshape(-1, 951, 288)
+        data = data.reshape(-1, 951, 288)                # 601 951 288
         labels = labels.reshape(-1, 951, 288)
+        # make sure we change this later to meet the requirement of data volume
+        data = data[::100, ::100, :]
+        labels = labels[::100, ::100, :]
         
         # Add batch dimension and permute
         data = data[np.newaxis, :].permute(0, 1, -1, 2)
         labels = labels[np.newaxis, :].permute(0, 1, -1, 2)
+        
         
         # Pad data to be divisible by kernel size
         data = F.pad(data, [
@@ -113,7 +117,11 @@ class HorizonDataFactory:
         labels = labels.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
         labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
         
+        # data/labels shape 18030, 1, 288, 64 --> 18030, 1, 64, 288
         # Create dataset
+        data = data.permute(0, 1, -1, 2)
+        labels = labels.permute(0, 1, -1, 2)
+        
         full_dataset = SimpleDataset(data, labels)
         
         # Split dataset
