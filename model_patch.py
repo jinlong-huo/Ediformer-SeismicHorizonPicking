@@ -1,9 +1,11 @@
+# import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+from timm.models.layers import DropPath, to_2tuple
+# (, Mlp, PatchEmbed, lecun_normal_,
+#                                 , trunc_normal_)
 
-from timm.models.layers import PatchEmbed, Mlp, DropPath, trunc_normal_, lecun_normal_, to_2tuple
 
 def weight_init(m):
     if isinstance(m, (nn.Conv2d,)):
