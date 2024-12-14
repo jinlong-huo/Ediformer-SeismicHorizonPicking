@@ -4,7 +4,6 @@
 ./.history
 ./utils
 ./process
-./test.py
 ./DOD_1D_main.py
 ./model_patch_origin.py
 .history/.gitignore_20241211084645

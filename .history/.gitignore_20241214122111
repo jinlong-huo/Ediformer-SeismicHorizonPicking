@@ -4,7 +4,6 @@
 ./.history
 ./utils
 ./process
-./test.py
 ./DOD_1D_main.py
 ./model_patch_origin.py
 .history/.gitignore_20241211084645
@@ -363,6 +362,3 @@ process/output/meta_model_ckpt/meta_phase_checkpoint.pth
 process/output/meta_model_ckpt/phase_checkpoint.pth
 utils/__pycache__/datafactory.cpython-310.pyc
 utils/__pycache__/tools.cpython-310.pyc
-utils/__pycache__/datafactory.cpython-310.pyc
-__pycache__/model_patch.cpython-310.pyc
-__pycache__/model.cpython-310.pyc
