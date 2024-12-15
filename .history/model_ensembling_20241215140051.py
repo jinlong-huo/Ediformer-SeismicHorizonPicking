@@ -8,8 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from models.diformer_patch import Diformer
-from models.fusion_model import UNetFusionModel
+from model_patch import Diformer
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
 
@@ -40,7 +39,6 @@ class FeatureFusionModel(nn.Module):
         return x.view(-1, self.num_classes, self.height, self.width)
 
 
-
 class AdvancedEnsembleLearner:
     """
     Advanced Ensemble Learning with Feature Fusion
@@ -61,15 +59,13 @@ class AdvancedEnsembleLearner:
             ) for _ in range(num_classifiers)
         ])
         
-        # total_feature_dim = sum(
-        #     classifier.feature_projection.out_features  # 288 aligned with feature projection dim
-        #     for classifier in self.classifiers
-        # )
+        # Initialize fusion model we define for 4 but only give 3 i.e., 3*288
+        total_feature_dim = sum(
+            classifier.feature_projection.out_features  # 288 aligned with feature projection dim
+            for classifier in self.classifiers
+        )
         
-        # total_feature_dim = num_classifiers * self.classifiers[0].feature_projection.out_features
-        total_feature_dim = num_classifiers * self.classifiers[0].feature_fuse_projection.out_features
-
-        self.fusion_model = UNetFusionModel(
+        self.fusion_model = FeatureFusionModel(
             total_feature_dim=total_feature_dim, 
             num_classes=num_classes,
             fusion_height=height,
@@ -112,7 +108,7 @@ class AdvancedEnsembleLearner:
                 stage_name = 'meta'
                 
                 for batch_x, batch_y in train_loader:
-                    # print(f"Training {attr_name} with dataloader")
+                    print(f"Training {attr_name} with dataloader")
                     optimizer.zero_grad()
                     # squeeze the first dimension to calculate loss
                     batch_y = torch.squeeze(batch_y.long())
@@ -122,6 +118,7 @@ class AdvancedEnsembleLearner:
                     loss = criterion(outputs, batch_y)
                     loss.backward()
                     optimizer.step()
+                    
                     total_loss += loss.item()
                 
                 print(f"Meta-Model {idx+1} Epoch {epoch+1}, Training Loss: {total_loss/len(train_loader)}")
@@ -140,7 +137,7 @@ class AdvancedEnsembleLearner:
                         _, predicted = outputs.max(1)
                         total += batch_y.size(0)
                         correct += predicted.eq(batch_y).sum().item()
-               
+                # print(f"Meta-Model {idx} Epoch {epoch}, Val Loss: {(val_loss / len(val_loader)):4.f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%") 
                 print(f"Meta-Model {idx + 1} - Epoch {epoch + 1}: Validation Loss: {val_loss / len(val_loader):.4f}, Validation Accuracy: {100 * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
                 # attr_name
                 early_stopping(-val_loss, classifier, mm_path, attr_name, stage_name=stage_name)     
@@ -171,7 +168,6 @@ class AdvancedEnsembleLearner:
             
             # Concatenate features from all meta-models concatenate 2nd dimension to map channel into probs
             total_features = torch.cat(all_features, dim=1)
-            
             final_labels = all_labels[0]  # Assume consistent labels across attributes
             
             # Train fusion model
@@ -179,9 +175,9 @@ class AdvancedEnsembleLearner:
             
             # ================
             # Simplify the fusion model for running all the process by letting total features as fusion model outputs
-            
-            fusion_outputs = self.fusion_model(total_features) # torch.Size([146, 14, 64, 288]) 14 --> 7 
-            
+            # fusion_outputs = self.fusion_model(total_features) # torch.Size([146, 14, 64, 288]) 14 --> 7 
+            # =================
+               
             fusion_outputs = total_features
             # squeeze and convert into long dtype
             final_labels = torch.squeeze(final_labels)
@@ -218,7 +214,7 @@ class AdvancedEnsembleLearner:
             total_val_features = torch.cat(val_features, dim=1)
             final_val_labels = val_labels[0]  # Assume consistent labels across attributes
             
-            val_outputs = self.fusion_model(total_val_features)
+            # val_outputs = self.fusion_model(total_val_features)
             val_outputs = total_val_features
             final_val_labels = torch.squeeze(final_val_labels)
             val_loss = criterion(val_outputs, final_val_labels.long())
@@ -227,7 +223,7 @@ class AdvancedEnsembleLearner:
             total = final_val_labels.size(0)
             correct = predicted.eq(final_val_labels).sum().item()
             
-            print(f"Fusion Model Epoch {epoch+1}, Val Loss: {val_loss.item():.4f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
+            print(f"Fusion Model Epoch {epoch}, Val Loss: {val_loss.item():.4f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
             attr_name = '_'.join(attr_name_full)
             early_stopping(-val_loss, self.fusion_model, fm_path, attr_name, stage_name)   
              
@@ -250,6 +246,7 @@ class AdvancedEnsembleLearner:
                     classifier_features.append(features)
             
             all_features.append(torch.cat(classifier_features, dim=0))
+        
         # Concatenate features
         total_features = torch.cat(all_features, dim=1)
         
@@ -292,7 +289,7 @@ def main():
     attribute_configs = [
         {'input_dim': 288, 'feature_dim': 288},  # Attribute 1
         {'input_dim': 288, 'feature_dim': 288},  # Attribute 2
-        # {'input_dim': 288, 'feature_dim': 288}   # Attribute 3
+        {'input_dim': 288, 'feature_dim': 288}   # Attribute 3
     ]
     # embed_dims = [16, 8, 8, 8]
     embed_dims = [72, 36, 36, 36]
@@ -344,7 +341,7 @@ def parse_args():
     parser.add_argument('--height', type=int, default=288, 
                         help='data height size')
     
-    parser.add_argument('--width', type=int, default=64, 
+    parser.add_argument('--width', type=int, default=1, 
                         help='data width size')
 
     parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 

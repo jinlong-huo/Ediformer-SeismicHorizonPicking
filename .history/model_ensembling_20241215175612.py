@@ -67,7 +67,8 @@ class AdvancedEnsembleLearner:
         # )
         
         # total_feature_dim = num_classifiers * self.classifiers[0].feature_projection.out_features
-        total_feature_dim = num_classifiers * self.classifiers[0].feature_fuse_projection.out_features
+        # total_feature_dim = num_classifiers * self.classifiers[0].feature_projection.out_features
+        total_feature_dim = self.classifiers[0].feature_projection.out_features
 
         self.fusion_model = UNetFusionModel(
             total_feature_dim=total_feature_dim, 
@@ -182,6 +183,7 @@ class AdvancedEnsembleLearner:
             
             fusion_outputs = self.fusion_model(total_features) # torch.Size([146, 14, 64, 288]) 14 --> 7 
             
+            
             fusion_outputs = total_features
             # squeeze and convert into long dtype
             final_labels = torch.squeeze(final_labels)
@@ -227,7 +229,7 @@ class AdvancedEnsembleLearner:
             total = final_val_labels.size(0)
             correct = predicted.eq(final_val_labels).sum().item()
             
-            print(f"Fusion Model Epoch {epoch+1}, Val Loss: {val_loss.item():.4f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
+            print(f"Fusion Model Epoch {epoch}, Val Loss: {val_loss.item():.4f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
             attr_name = '_'.join(attr_name_full)
             early_stopping(-val_loss, self.fusion_model, fm_path, attr_name, stage_name)   
              
