@@ -116,10 +116,8 @@ class HorizonDataFactory:
         ])
         labels = labels.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
         labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
-        
-        print(f"Processed {attr_name} Data size: ", data.shape)
-        print(f"Processed {attr_name} Labels size: ", labels.shape)
-        
+        print("Data size: ", data.shape)
+        print("Labels size: ", labels.shape)
         # data/labels shape 18030, 1, 288, 64 --> 18030, 1, 64, 288
         # Create dataset
         data = data.permute(0, 1, -1, 2)
