@@ -262,8 +262,9 @@ class AdvancedEnsembleLearner:
 
 def main():
     stime = time.ctime()
-
-    attribute_names = ['freq', 'phase', 'seismic', 'amp', 'dip']
+    # freq phase seismic dip amp
+    # attribute_names = ['freq', 'phase', 'seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
+    attribute_names = ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
     
     data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 16, 32), batch_size=args.batch_size) # the resulting 
     
@@ -360,11 +361,11 @@ def parse_args():
                         help='output log dir')
     
     parser.add_argument('--attr_dirs', type=dict,  default = {
-        "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
-                 "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
+        #          "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", 
-                  "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", 
+                #   "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
         "seismic": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy", 
                     "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
@@ -373,8 +374,21 @@ def parse_args():
                 "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
         "amp": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.npy", 
+                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        
+        "complex": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy", 
+                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        
+        "coherence": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy", 
+                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        
+        "average_zero": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy", 
+                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        
+        "azimuth": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Azimuth.npy", 
                 "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
         
+        # ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
     }, help='attr names and paths')
     
     args = parser.parse_args()
