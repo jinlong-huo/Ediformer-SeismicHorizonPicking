@@ -373,3 +373,7 @@ process/output/fusion_model_ckpt/fusion_freq_phase_seismic_amp_dip_checkpoint.pt
 process/output/meta_model_ckpt/meta_amp_checkpoint.pth
 process/output/meta_model_ckpt/meta_dip_checkpoint.pth
 process/output/meta_model_ckpt/meta_seismic_checkpoint.pth
+Diformer_final/Dformer_patch_main.py
+Diformer_final/DFormer_seis.py
+Diformer_final/DOD_ensemble.py
+Diformer_final/ensemble_main.py

@@ -66,13 +66,15 @@ class HorizonDataFactory:
         
         # Initialize storage for dataloaders
         self.attribute_dataloaders = {}
-
+        print("============ Begin processing dataset ========\n")
+        
         # Process each attribute's data
         for attr_name, dir_paths in self.attr_dirs.items():
             data_path = dir_paths['data']
             label_path = dir_paths['label']
             self._process_attribute_data(attr_name, data_path, label_path)
-    
+            
+            
     def _process_attribute_data(self, attr_name, data_path, label_path):
         """
         Process and create dataloaders for a specific attribute
@@ -88,14 +90,21 @@ class HorizonDataFactory:
         # Reshape
         data = data.reshape(-1, 951, 288)                # 601 951 288
         labels = labels.reshape(-1, 951, 288)
-        # make sure we change this later to meet the requirement of data volume
-        data = data[::10, ::10, :]
-        labels = labels[::10, ::10, :]
+        
+        # To align with dip attr we remove last inline of data and labels
+        data = data[:600, :, :]
+        labels = labels[:600, :, :]
+        
+        # Change here to adjust data volume you use
+        data = data[::100, ::100, :]
+        labels = labels[::100, ::100, :]
+        
+        # data = data[::5, ::5, :]
+        # labels = labels[::5, ::5, :]
         
         # Add batch dimension and permute
         data = data[np.newaxis, :].permute(0, 1, -1, 2)
         labels = labels[np.newaxis, :].permute(0, 1, -1, 2)
-        
         
         # Pad data to be divisible by kernel size
         data = F.pad(data, [
@@ -118,9 +127,8 @@ class HorizonDataFactory:
         labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
         
         print(f"Processed {attr_name} Data size: ", data.shape)
-        print(f"Processed {attr_name} Labels size: ", labels.shape)
+        print(f"Processed {attr_name} Labels size: {labels.shape}\n")
         
-        # data/labels shape 18030, 1, 288, 64 --> 18030, 1, 64, 288
         # Create dataset
         data = data.permute(0, 1, -1, 2)
         labels = labels.permute(0, 1, -1, 2)
@@ -134,7 +142,7 @@ class HorizonDataFactory:
         generator = torch.Generator().manual_seed(self.random_seed)
         train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
         
-        # Create dataloaders
+        # Create dataloaders 
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
         test_loader = DataLoader(full_dataset, batch_size=self.batch_size)
@@ -166,33 +174,34 @@ class HorizonDataFactory:
                 raise ValueError(f"Attribute '{attr}' not found in processed attributes.")
             loaders[attr] = self.attribute_dataloaders[attr]
             
+        print("============ Process dataset done ============\n")
         return loaders
 
 
-def main():
-    attr_dirs = {
-        "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
-    }
+# def main():
+#     attr_dirs = {
+#         "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+#         "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
+#     }
     
-    data_factory = HorizonDataFactory(attr_dirs=attr_dirs, kernel_size=(1, 288, 64), stride=(1, 64, 32))
+#     data_factory = HorizonDataFactory(attr_dirs=attr_dirs, kernel_size=(1, 288, 64), stride=(1, 64, 32))
     
-    dataloaders = data_factory.get_dataloaders(["freq", "phase"])
+#     dataloaders = data_factory.get_dataloaders(["freq", "phase"])
     
-    train_loaders = [loaders["train"] for _, loaders in dataloaders.items()]
-    val_loaders = [loaders["val"] for _, loaders in dataloaders.items()]
-    test_loaders = [loaders["test"] for _, loaders in dataloaders.items()]
-    # attribute_val_loaders = [attribute_dataloaders["val"] for attr, loaders in attribute_dataloaders.items()]
-    # attribute_test_loaders = [attribute_dataloaders["test"] for attr, loaders in attribute_dataloaders.items()]
+#     train_loaders = [loaders["train"] for _, loaders in dataloaders.items()]
+#     val_loaders = [loaders["val"] for _, loaders in dataloaders.items()]
+#     test_loaders = [loaders["test"] for _, loaders in dataloaders.items()]
+#     # attribute_val_loaders = [attribute_dataloaders["val"] for attr, loaders in attribute_dataloaders.items()]
+#     # attribute_test_loaders = [attribute_dataloaders["test"] for attr, loaders in attribute_dataloaders.items()]
     
-    # for idx, loader in enumerate(train_loaders):
-    #     print(f"Train Loader for Attribute {list(dataloaders.keys())[idx]}:")
-    #     print(f"  Number of batches: {len(loader)}")
-    # for attr, loaders in dataloaders.items():
-    #     print(f"Attribute: {attr}")
-    print(f"Train size: {len(train_loaders)}")
-    print(f"Train size: {len(val_loaders)}")
-    print(f"Train size: {len(test_loaders)}")
+#     # for idx, loader in enumerate(train_loaders):
+#     #     print(f"Train Loader for Attribute {list(dataloaders.keys())[idx]}:")
+#     #     print(f"  Number of batches: {len(loader)}")
+#     # for attr, loaders in dataloaders.items():
+#     #     print(f"Attribute: {attr}")
+#     print(f"Train size: {len(train_loaders)}")
+#     print(f"Train size: {len(val_loaders)}")
+#     print(f"Train size: {len(test_loaders)}")
     
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

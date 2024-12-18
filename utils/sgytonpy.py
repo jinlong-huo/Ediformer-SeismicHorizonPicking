@@ -18,9 +18,12 @@ def sgy_to_npy(sgy_file, npy_file):
 
     print(f"Conversion complete. Data saved as {npy_file}")
 
-# Example usage:
-sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.sgy'
-npy_file = 'F3_amp.npy'
+
+# sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.sgy'
+# npy_file = 'F3_amp.npy'
+
+sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/f3_Azimuth.sgy'
+npy_file = 'F3_Azimuth.npy'
 
 sgy_to_npy(sgy_file, npy_file)
 
