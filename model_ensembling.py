@@ -13,7 +13,6 @@ from models.fusion_model import UNetFusionModel
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
 
-
 class FeatureFusionModel(nn.Module):
     """
     Final model to fuse features from meta-models
@@ -57,7 +56,7 @@ class AdvancedEnsembleLearner:
             Diformer(
                 dim=dim, 
                 num_heads=num_heads,
-                feature_projection_dim=288
+                feature_projection_dim=16 # define projection dim regarding model_patch
             ) for _ in range(num_classifiers)
         ])
         
@@ -131,6 +130,7 @@ class AdvancedEnsembleLearner:
                 val_loss = 0
                 correct = 0
                 total = 0
+                
                 with torch.no_grad():
                     for batch_x, batch_y in val_loader:
                         batch_y = torch.squeeze(batch_y.long())
@@ -140,10 +140,11 @@ class AdvancedEnsembleLearner:
                         _, predicted = outputs.max(1)
                         total += batch_y.size(0)
                         correct += predicted.eq(batch_y).sum().item()
-               
+                
                 print(f"Meta-Model {attr_name} - Epoch {epoch + 1}: Validation Loss: {val_loss / len(val_loader):.4f}, Validation Accuracy: {100 * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
                 # attr_name
                 early_stopping(-val_loss, classifier, mm_path, attr_name, stage_name=stage_name)     
+                
             print('\n')     
             # Stage 2: Fusion model
             # Stage 2.1: Train funsion model
@@ -264,7 +265,9 @@ def main():
     stime = time.ctime()
     # freq phase seismic dip amp
     # attribute_names = ['freq', 'phase', 'seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
-    attribute_names = ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
+    # attribute_names = ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
+    attribute_names = ['seismic', 'dip']
+    
     
     data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 16, 32), batch_size=args.batch_size) # the resulting 
     
@@ -281,7 +284,8 @@ def main():
     test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
     attribute_test_loaders = list(zip(attribute_keys, test_values))
     
-    embed_dims = [72, 36, 36, 36]
+    # embed_dims = [72, 36, 36, 36]
+    embed_dims = [4, 4, 4, 4]
     heads = 2
     
     # Initialize Advanced Ensemble Learner
@@ -351,7 +355,7 @@ def parse_args():
     parser.add_argument('--heads', type=int,  default=2,
                         help='Script in testing mode')
     
-    parser.add_argument('--num_epoch', type=int,  default=2,
+    parser.add_argument('--num_epoch', type=int,  default=20,
                         help='Overall training epochs')
     
     parser.add_argument('--training_dir', type=str,  default='./process/training',
@@ -373,20 +377,20 @@ def parse_args():
         "dip": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy", 
                 "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "amp": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "amp": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "complex": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "complex": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "coherence": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "coherence": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "average_zero": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "average_zero": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "azimuth": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Azimuth.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
+        # "azimuth": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Azimuth.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
         
         # ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
     }, help='attr names and paths')
