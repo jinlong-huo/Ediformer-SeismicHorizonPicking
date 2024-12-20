@@ -83,6 +83,10 @@ class HorizonDataFactory:
         data = np.load(data_path)
         labels = np.load(label_path)
         
+        mean = np.mean(data, axis=0)
+        std = np.std(data, axis=0)
+        data = (data - mean) / std
+        
         # Convert to tensors
         data = torch.tensor(data, dtype=torch.float) # 571551 288
         labels = torch.tensor(labels, dtype=torch.float)
@@ -103,8 +107,8 @@ class HorizonDataFactory:
         # labels = labels[::5, ::5, :]
         
         # Add batch dimension and permute
-        data = data[np.newaxis, :].permute(0, 1, -1, 2)
-        labels = labels[np.newaxis, :].permute(0, 1, -1, 2)
+        data = data[np.newaxis, :].permute(0, 1, -1, 2)      # b, c, 288, 10
+        labels = labels[np.newaxis, :].permute(0, 1, -1, 2)  # b, c, 288, 10
         
         # Pad data to be divisible by kernel size
         data = F.pad(data, [
@@ -116,6 +120,7 @@ class HorizonDataFactory:
         # Apply sliding window (unfold)
         data = data.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
         data = data.contiguous().view(-1, self.kc, self.kh, self.kw)
+        data = data.reshape(data.shape[0], -1, self.kh, self.kw)
         
         # Pad and unfold labels
         labels = F.pad(labels, [
@@ -125,13 +130,14 @@ class HorizonDataFactory:
         ])
         labels = labels.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
         labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
+        labels = labels.reshape(labels.shape[0], -1, self.kh, self.kw)
         
         print(f"Processed {attr_name} Data size: ", data.shape)
         print(f"Processed {attr_name} Labels size: {labels.shape}\n")
         
         # Create dataset
-        data = data.permute(0, 1, -1, 2)
-        labels = labels.permute(0, 1, -1, 2)
+        # data = data.permute(0, 1, -1, 2)
+        # labels = labels.permute(0, 1, -1, 2)
         
         full_dataset = SimpleDataset(data, labels)
         
