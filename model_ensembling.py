@@ -115,7 +115,7 @@ class AdvancedEnsembleLearner:
                     optimizer.zero_grad()
                     # squeeze the first dimension to calculate loss
                     batch_y = torch.squeeze(batch_y.long())
-                    # Compute loss for individual classifier
+                    # Compute loss for individual classifier batch_x should have the shape of 288 as height and others as width
                     outputs = classifier(batch_x) 
                     # outputs / projected features shape torch.Size([16, 7, 64, 288])
                     loss = criterion(outputs, batch_y)
@@ -269,7 +269,7 @@ def main():
     attribute_names = ['seismic', 'dip']
     
     
-    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 16, 32), batch_size=args.batch_size) # the resulting 
+    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 64, 32), batch_size=args.batch_size) # the resulting 
     
     attribute_dataloaders = data_factory.get_dataloaders(attribute_names)
     
@@ -285,7 +285,8 @@ def main():
     attribute_test_loaders = list(zip(attribute_keys, test_values))
     
     # embed_dims = [72, 36, 36, 36]
-    embed_dims = [4, 4, 4, 4]
+    # embed_dims = [4, 2, 2, 2]
+    embed_dims = [16, 8, 8, 8]
     heads = 2
     
     # Initialize Advanced Ensemble Learner
@@ -298,7 +299,6 @@ def main():
         width=args.width,
         meta_model_path=args.mm_ckpt_path,
         fusion_model_path=args.fm_ckpt_path
-        
     )
     
     if args.is_training:
@@ -334,7 +334,7 @@ def parse_args():
     parser.add_argument('--height', type=int, default=288, 
                         help='data height size')
     
-    parser.add_argument('--width', type=int, default=64, 
+    parser.add_argument('--width', type=int, default=16, 
                         help='data width size')
 
     parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 
@@ -349,7 +349,7 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cuda:1',
                         help='device configuration')
     
-    parser.add_argument('--embed_dims', type=list, default=[72, 36, 36, 36],
+    parser.add_argument('--embed_dims', type=list, default=[16, 8, 8, 8],
                         help='Script in testing mode')
     
     parser.add_argument('--heads', type=int,  default=2,
@@ -393,6 +393,7 @@ def parse_args():
         #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
         
         # ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
+        
     }, help='attr names and paths')
     
     args = parser.parse_args()

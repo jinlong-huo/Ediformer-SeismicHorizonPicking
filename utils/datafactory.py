@@ -100,15 +100,18 @@ class HorizonDataFactory:
         labels = labels[:600, :, :]
         
         # Change here to adjust data volume you use
-        data = data[::100, ::100, :]
-        labels = labels[::100, ::100, :]
+        data = data[::100, ::10, :]
+        labels = labels[::100, ::10, :]
         
         # data = data[::5, ::5, :]
         # labels = labels[::5, ::5, :]
         
         # Add batch dimension and permute
-        data = data[np.newaxis, :].permute(0, 1, -1, 2)      # b, c, 288, 10
-        labels = labels[np.newaxis, :].permute(0, 1, -1, 2)  # b, c, 288, 10
+        data = np.swapaxes(data, -1, 1)
+        labels = np.swapaxes(labels, -1, 1)
+        
+        data = data[np.newaxis, :]    # b, c, 288, 10
+        labels = labels[np.newaxis, :]  # b, c, 288, 10
         
         # Pad data to be divisible by kernel size
         data = F.pad(data, [
