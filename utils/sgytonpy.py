@@ -4,28 +4,44 @@ import numpy as np
 import obspy
 import segyio
 
+"This is utilizing cpu multiple process to manipulate the large sgy file into npy data"
+# def process_with_memmap(segy_file, npy_file):
+#     with segyio.open(segy_file, 'r') as f:
+#         # Use memory mapping for large arrays
+#         traces = np.memmap(npy_file, dtype='float32', mode='w+', shape=(len(f.trace), f.samples.size))
+#         # Process traces one by one
+#         for i in range(len(f.trace)):
+#             traces[i] = f.trace[i]
 
-def sgy_to_npy(sgy_file, npy_file):
-    # Read the SEG-Y file using ObsPy
-    st = obspy.read(sgy_file)
+# segy_file = '/home/dell/disk1/Jinlong/faciesdata/waka/WAKA3D_Final.sgy'
+# npy_file = 'WAKA3D_Final.npy'
+
+# process_with_memmap(segy_file, npy_file)
+
+"below is for small sgy filr to convert into npy files"
+# def sgy_to_npy(sgy_file, npy_file):
+#     # Read the SEG-Y file using ObsPy
+#     st = obspy.read(sgy_file)
     
-    # Assuming the SEG-Y file has one trace per channel (standard case)
-    # Extract the data as a numpy array (shape: (num_traces, num_samples))
-    data = np.array([trace.data for trace in st])
+#     # Assuming the SEG-Y file has one trace per channel (standard case)
+#     # Extract the data as a numpy array (shape: (num_traces, num_samples))
+#     data = np.array([trace.data for trace in st])
 
-    # Save the data to a .npy file
-    np.save(npy_file, data)
+#     # Save the data to a .npy file
+#     np.save(npy_file, data)
 
-    print(f"Conversion complete. Data saved as {npy_file}")
+#     print(f"Conversion complete. Data saved as {npy_file}")
 
+# sgy_file = '/home/dell/disk1/Jinlong/faciesdata/waka/WAKA3D_Final.sgy'
+# npy_file = 'WAKA3D_Final.npy'
+# sgy_to_npy(sgy_file, npy_file)
 
 # sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.sgy'
 # npy_file = 'F3_amp.npy'
 
-sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/f3_Azimuth.sgy'
-npy_file = 'F3_Azimuth.npy'
+# sgy_file = '/home/dell/disk1/Jinlong/Horizontal-data/f3_Azimuth.sgy'
+# npy_file = 'F3_Azimuth.npy'
 
-sgy_to_npy(sgy_file, npy_file)
 
 
 # freq_data = None
@@ -88,3 +104,79 @@ sgy_to_npy(sgy_file, npy_file)
 
 #     divide_segy_by_inline(input_file, output_directory)
 
+import obspy
+import numpy as np
+import multiprocessing as mp
+from tqdm import tqdm
+import os
+
+def process_chunk(args):
+    """Process a chunk of traces from the SEG-Y file"""
+    sgy_file, start_idx, end_idx, chunk_file = args
+    
+    # Read the specific portion of the SEG-Y file
+    st = obspy.read(sgy_file)
+    chunk_data = np.array([st[i].data for i in range(start_idx, end_idx)])
+    
+    # Save the chunk to a temporary file
+    np.save(chunk_file, chunk_data)
+    return chunk_file
+
+def parallel_sgy_to_npy(sgy_file, npy_file, num_processes=4):
+    """Convert SEG-Y to NPY using parallel processing"""
+    
+    # First, get the total number of traces
+    st = obspy.read(sgy_file)
+    num_traces = len(st)
+    num_samples = len(st[0].data)
+    
+    print(f"Total traces: {num_traces}")
+    print(f"Samples per trace: {num_samples}")
+    
+    # Calculate chunk sizes
+    chunk_size = num_traces // num_processes
+    chunks = []
+    
+    # Prepare arguments for each process
+    for i in range(num_processes):
+        start_idx = i * chunk_size
+        end_idx = start_idx + chunk_size if i < num_processes-1 else num_traces
+        chunk_file = f'temp_chunk_{i}.npy'
+        chunks.append((sgy_file, start_idx, end_idx, chunk_file))
+    
+    # Create a pool of processes
+    with mp.Pool(processes=num_processes) as pool:
+        # Process chunks in parallel with progress bar
+        chunk_files = list(tqdm(pool.imap(process_chunk, chunks), 
+                              total=len(chunks), 
+                              desc="Processing chunks"))
+    
+    # Combine chunks
+    print("Combining chunks...")
+    final_data = np.zeros((num_traces, num_samples), dtype=np.float32)
+    
+    for i, chunk_file in enumerate(chunk_files):
+        start_idx = i * chunk_size
+        end_idx = start_idx + chunk_size if i < num_processes-1 else num_traces
+        chunk_data = np.load(chunk_file)
+        final_data[start_idx:end_idx] = chunk_data
+        
+        # Clean up temporary files
+        os.remove(chunk_file)
+    
+    # Save the final combined array
+    print("Saving final NPY file...")
+    np.save(npy_file, final_data)
+    print(f"Conversion complete. Data saved as {npy_file}")
+
+# Usage
+if __name__ == '__main__':
+    sgy_file = '/home/dell/disk1/Jinlong/faciesdata/waka/WAKA3D_Final.sgy'
+    npy_file = 'WAKA3D_Final.npy'
+    
+    # Get number of available CPU cores
+    num_cores = mp.cpu_count()
+    # Use 75% of available cores by default
+    recommended_processes = max(1, int(num_cores * 0.75))
+    
+    parallel_sgy_to_npy(sgy_file, npy_file, num_processes=recommended_processes)
