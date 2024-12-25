@@ -13,7 +13,6 @@ from models.DOD_ensemble import DexiNed
 from models.fusion_model import UNetFusionModel
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 class FeatureFusionModel(nn.Module):
     """
@@ -80,23 +79,19 @@ class AdvancedEnsembleLearner:
         # self.classifier_weights = torch.ones(len(self.classifiers)) / len(self.classifiers)
         
         
-    def train_meta_models(self, classifier, train_loader, optimizer, attr_name, epoch):
+    def train_meta_models(self, classifier, train_loader, optimizer, criterion, attr_name, epoch):
         classifier.train()
         total_loss = 0
         accuracy = []
         scaler = torch.cuda.amp.GradScaler()
-        torch.nn.utils.clip_grad_norm_(classifier.parameters(), max_norm=1.0)
-        l_weight = [0.7, 0.7, 1.1, 1.1, 0.3, 0.3, 7.8]
-        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).cuda()
         
         for batch_x, batch_y in train_loader:
             batch_x = batch_x.cuda()
             batch_y = batch_y.cuda()
             optimizer.zero_grad()
+            batch_y = torch.squeeze(batch_y.long())
             with torch.cuda.amp.autocast():
                 outputs, _ = classifier(batch_x)
-                batch_y = torch.squeeze(batch_y.long())
-                criterion = nn.CrossEntropyLoss(weight=l_weight_tensor)
                 loss = criterion(outputs[6], batch_y)
                 # loss.backward()
                 # optimizer.step()
@@ -112,33 +107,25 @@ class AdvancedEnsembleLearner:
         print(f"Meta-Model {attr_name} - Epoch {epoch+1}: Training Loss: {total_loss/len(train_loader)} Training Acc: {np.mean(accuracy)*100:.2f}%")
 
 
-    def val_meta_models(self, classifier, val_loader, attr_name, epoch, early_stopping, save_path, scheduler):
+    def val_meta_models(self, classifier, val_loader, criterion, attr_name, epoch, early_stopping, save_path):
         classifier.eval()
         val_loss = 0
         correct = 0
         total = 0
-        l_weight = [0.7, 0.7, 1.1, 1.1, 0.3, 0.3, 7.8]
-        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).cuda()
-        weighted_criterion = nn.CrossEntropyLoss(weight=l_weight_tensor)
         with torch.no_grad():
-            for i, (batch_x, batch_y) in enumerate(val_loader):
+            for batch_x, batch_y in val_loader:
                 batch_x = batch_x.cuda()
                 batch_y = batch_y.cuda()
                 batch_y = torch.squeeze(batch_y.long())
                 outputs, _ = classifier(batch_x)
-                if torch.isnan(outputs[6]).any() or torch.isinf(outputs[6]).any():
-                    print("Warning: NaN or Inf detected in outputs")
-                    continue
-                loss = weighted_criterion(outputs[6], batch_y.long())
+                loss = criterion(outputs[6], batch_y.long())
                 val_loss += loss.item()
                 _, predicted = outputs[6].max(1)
-                # total += batch_y.size(0)
-                total += batch_y.numel()
+                total += batch_y.size(0)
                 correct += predicted.eq(batch_y).sum().item()
         print(f"Meta-Model {attr_name} - Epoch {epoch+1}: Validation Loss: {val_loss/len(val_loader):.4f}, Validation Acc: {100. * correct / total:.2f}%")
-        scheduler.step(val_loss)
         early_stopping(-val_loss, classifier, save_path, attr_name, stage_name='meta')
-        
+
     def train_fusion_model(self, attribute_dataloaders, optimizer, criterion):
         self.fusion_model.train()
         all_features = []
@@ -165,8 +152,7 @@ class AdvancedEnsembleLearner:
         
         return loss
 
-
-    def validate_fusion_model(self, validation_dataloaders, criterion, fm_path, early_stopping, fusion_scheduler):
+    def validate_fusion_model(self, validation_dataloaders, criterion, fm_path, early_stopping):
         
         self.fusion_model.eval()
         val_features = []
@@ -189,7 +175,7 @@ class AdvancedEnsembleLearner:
         _, predicted = val_outputs.max(1)
         total = final_val_labels.size(0)
         correct = predicted.eq(final_val_labels).sum().item()
-        fusion_scheduler.step(val_loss)
+        
         early_stopping(-val_loss, self.fusion_model, fm_path, attr_name, stage_name='fusion')
         
         
@@ -200,12 +186,11 @@ class AdvancedEnsembleLearner:
                        attribute_dataloaders: List, 
                        validation_dataloaders: List, 
                        epochs: int = 2, 
-                       learning_rate: float = 1e-3                       
+                       learning_rate: float = 1e-1                       
                        ):
         """
         Train meta-models and fusion model
         """
-        # Learning rate scheduler
         
         # Individual optimizers for classifiers and fusion model
         classifier_optimizers = [
@@ -214,24 +199,6 @@ class AdvancedEnsembleLearner:
         ]
         fusion_optimizer = optim.AdamW(self.fusion_model.parameters(), lr=learning_rate)
         criterion = nn.CrossEntropyLoss()
-        classifier_schedulers = [torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 
-                mode='min', 
-                factor=0.1, 
-                patience=5
-            ) for optimizer in classifier_optimizers
-        ]
-
-        # Scheduler for fusion model
-        fusion_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            fusion_optimizer,
-            mode='min',
-            factor=0.1,
-            patience=5
-        )
-        
-        # alternatively use exponential decay
-        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
         
         # Init early stopping
         mm_path = os.path.join(self.mmp)
@@ -240,10 +207,11 @@ class AdvancedEnsembleLearner:
         
         for epoch in range(epochs):
             # Stage 1: Individual meta-models for each attribute 
-            for idx, (classifier, ((attr_name, train_loader), (attr_name, val_loader)), optimizer, scheduler) in enumerate(zip(self.classifiers, zip(attribute_dataloaders, validation_dataloaders), classifier_optimizers, classifier_schedulers)):
-                self.train_meta_models(classifier, train_loader, optimizer, attr_name, epoch)
+            for idx, (classifier, ((attr_name, train_loader), (attr_name, val_loader)), optimizer) in enumerate(zip(self.classifiers, zip(attribute_dataloaders, validation_dataloaders), classifier_optimizers)):
+                
+                self.train_meta_models(classifier, train_loader, optimizer, criterion, attr_name, epoch)
                 # output explosion not caused by dataset
-                self.val_meta_models(classifier, train_loader,   attr_name,  epoch, early_stopping, mm_path, scheduler)
+                self.val_meta_models(classifier, train_loader,  criterion, attr_name,  epoch, early_stopping, mm_path)
                 
             print('\n')     
             # Stage 2: Fusion model
@@ -252,7 +220,7 @@ class AdvancedEnsembleLearner:
             
             fusion_loss = self.train_fusion_model(attribute_dataloaders, fusion_optimizer, criterion)
             
-            fusion_val_metrics = self.validate_fusion_model(validation_dataloaders, criterion,fm_path,early_stopping, fusion_scheduler)
+            fusion_val_metrics = self.validate_fusion_model(validation_dataloaders, criterion,fm_path,early_stopping)
             
             print(f"Fusion Model Epoch {epoch+1}: Loss: {fusion_loss.item()} Val Loss: {fusion_val_metrics['loss']:.4f}, Val Acc: {fusion_val_metrics['accuracy']:.4f}%")
 
@@ -302,10 +270,10 @@ def main():
     train_values = [loaders["train"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
     attribute_train_loaders = list(zip(attribute_keys, train_values))
     
-    val_values = [loaders["val"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "val" loaders
+    val_values = [loaders["val"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
     attribute_val_loaders = list(zip(attribute_keys, val_values))
     
-    test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "test" loaders
+    test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
     attribute_test_loaders = list(zip(attribute_keys, test_values))
     
     # embed_dims = [72, 36, 36, 36]
