@@ -8,12 +8,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# from models.diformer_patch import Diformer this is not the problem of model it's about training and validation
+from models.diformer_patch import Diformer 
 from models.DOD_ensemble import DexiNed
 from models.fusion_model import UNetFusionModel
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
 
+"""
+we put everthing on cuda so  make sure the data and model are calculated in same stage
+"""
 
 class FeatureFusionModel(nn.Module):
     """
@@ -54,17 +57,17 @@ class AdvancedEnsembleLearner:
         self.fmp = fusion_model_path
         self.patience = patience
         
-        # self.classifiers = nn.ModuleList([
-        #     Diformer(
-        #         dim=dim, 
-        #         num_heads=num_heads,
-        #         feature_projection_dim=288 # define projection dim regarding model_patch
-        #     ) for _ in range(num_classifiers)
-        # ])
-        
         self.classifiers = nn.ModuleList([
-            DexiNed().cuda() for _ in range(num_classifiers)
+            Diformer(
+                dim=dim, 
+                num_heads=num_heads,
+                feature_projection_dim=288 # define projection dim regarding model_patch
+            ).cuda() for _ in range(num_classifiers)
         ])
+        
+        # self.classifiers = nn.ModuleList([
+        #     DexiNed().cuda() for _ in range(num_classifiers)
+        # ])
     
         # total_feature_dim = num_classifiers * self.classifiers[0].feature_fuse_projection.out_features
         total_feature_dim = num_classifiers * 7
@@ -95,10 +98,12 @@ class AdvancedEnsembleLearner:
             batch_y = batch_y.cuda()
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                outputs, _ = classifier(batch_x)
-                batch_y = torch.squeeze(batch_y.long())
                 criterion = nn.CrossEntropyLoss(weight=l_weight_tensor)
-                loss = criterion(outputs[6], batch_y)
+                batch_y = torch.squeeze(batch_y.long())
+                # outputs, _ = classifier(batch_x) # for dod model
+                # loss = criterion(outputs[6], batch_y) # for dod model
+                outputs = classifier(batch_x) 
+                loss = criterion(outputs, batch_y) 
                 # loss.backward()
                 # optimizer.step()
             scaler.scale(loss).backward()
@@ -107,7 +112,8 @@ class AdvancedEnsembleLearner:
             total_loss += loss.item()
             
             with torch.no_grad():
-                _, predicted = torch.max(outputs[6], 1)
+                # _, predicted = torch.max(outputs[6], 1) # for dod model
+                _, predicted = torch.max(outputs, 1)
                 correct = (predicted == batch_y).sum().item()
                 accuracy.append(correct / batch_y.numel())
         print(f"Meta-Model {attr_name} - Epoch {epoch+1}: Training Loss: {total_loss/len(train_loader)} Training Acc: {np.mean(accuracy)*100:.2f}%")
@@ -126,13 +132,13 @@ class AdvancedEnsembleLearner:
                 batch_x = batch_x.cuda()
                 batch_y = batch_y.cuda()
                 batch_y = torch.squeeze(batch_y.long())
-                outputs, _ = classifier(batch_x)
-                if torch.isnan(outputs[6]).any() or torch.isinf(outputs[6]).any():
-                    print("Warning: NaN or Inf detected in outputs")
-                    continue
-                loss = weighted_criterion(outputs[6], batch_y.long())
+                # outputs, _ = classifier(batch_x) # for dod model
+                # loss = weighted_criterion(outputs[6], batch_y.long()) # for dod model
+                outputs = classifier(batch_x) 
+                loss = weighted_criterion(outputs, batch_y.long()) 
                 val_loss += loss.item()
-                _, predicted = outputs[6].max(1)
+                # _, predicted = outputs[6].max(1) # for dod model
+                _, predicted = outputs.max(1)
                 # total += batch_y.size(0)
                 total += batch_y.numel()
                 correct += predicted.eq(batch_y).sum().item()
@@ -142,29 +148,100 @@ class AdvancedEnsembleLearner:
         
     def train_fusion_model(self, attribute_dataloaders, optimizer, criterion):
         self.fusion_model.train()
-        all_features = []
-        
         scaler = torch.cuda.amp.GradScaler()
-        for classifier, (attr_name, train_loader) in zip(self.classifiers, attribute_dataloaders):
-            for batch_x, batch_y in train_loader:
-                batch_x = batch_x.cuda()
-                batch_y = batch_y.cuda()
-                # features = classifier(batch_x, extract_features=True)
-                features, _ = classifier(batch_x)
-                all_features.append(features[6])
-                # all_labels.append(batch_y)
-        total_features = torch.cat(all_features, dim=1)
-        # final_labels = torch.cat(all_labels, dim=0)
-        optimizer.zero_grad()
-        final_labels = torch.squeeze(batch_y)
-        fusion_outputs = self.fusion_model(total_features)
-        loss = criterion(fusion_outputs, final_labels.long())
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        # loss.backward()
-        optimizer.step()
+        # all_features = []
+        # for classifier, (attr_name, train_loader) in zip(self.classifiers, attribute_dataloaders):
+        #     for batch_x, batch_y in train_loader:
+        #         batch_x = batch_x.cuda()
+        #         batch_y = batch_y.cuda()
+        #         # features = classifier(batch_x, extract_features=True)
+        #         # features, _ = classifier(batch_x) # for dod model
+        #         # all_features.append(features[6])  # for dod model
+        #         features = classifier(batch_x) 
+        #         all_features.append(features)  
+        #         # all_labels.append(batch_y)
+         # Get all dataloaders
+        train_loaders = [loader for _, loader in attribute_dataloaders]
+        # Convert loaders to iterators
+        loader_iters = [iter(loader) for loader in train_loaders]
+        min_batches = min(len(loader) for loader in train_loaders)
         
+        total_loss = 0
+        batch_count = 0
+        
+        # Process one batch at a time from each loader
+        for batch_idx in range(min_batches):
+            batch_features = []
+            
+            try:
+                # Get a batch from each loader
+                first_batch = next(loader_iters[0])
+                batch_size = first_batch[0].size(0)  # Get the batch size from first loader
+                first_labels = first_batch[1]
+                
+                # Process first classifier
+                x = first_batch[0].cuda()
+                features = self.classifiers[0](x)
+                batch_features.append(features)
+                
+                # Process remaining classifiers
+                for classifier, loader_iter in zip(self.classifiers[1:], loader_iters[1:]):
+                    try:
+                        batch_x, _ = next(loader_iter)
+                        
+                        # Check if batch sizes match
+                        if batch_x.size(0) != batch_size:
+                            # If not, either truncate or pad to match
+                            if batch_x.size(0) > batch_size:
+                                batch_x = batch_x[:batch_size]
+                            else:
+                                # Pad with zeros or repeat data to match batch size
+                                padding_needed = batch_size - batch_x.size(0)
+                                padding_shape = list(batch_x.size())
+                                padding_shape[0] = padding_needed
+                                padding = torch.zeros(padding_shape, device=batch_x.device)
+                                batch_x = torch.cat([batch_x, padding], dim=0)
+                        
+                        batch_x = batch_x.cuda()
+                        features = classifier(batch_x)
+                        batch_features.append(features)
+                        
+                    except StopIteration:
+                        break
+                    
+                # total_features = torch.cat(all_features, dim=1)
+                # # final_labels = torch.cat(all_labels, dim=0)
+                # optimizer.zero_grad()
+                
+                # final_labels = torch.squeeze(batch_y)
+                # fusion_outputs = self.fusion_model(total_features)
+                # loss = criterion(fusion_outputs, final_labels.long())
+                # scaler.scale(loss).backward()
+                # scaler.step(optimizer)
+                # scaler.update()
+                # # loss.backward()
+                # optimizer.step()
+                
+                total_features = torch.cat(batch_features, dim=1)
+                # Process through fusion model
+                optimizer.zero_grad()
+                labels = first_labels.cuda()
+                labels = torch.squeeze(labels)
+                
+                fusion_outputs = self.fusion_model(total_features)
+                loss = criterion(fusion_outputs, labels.long())
+                
+                # Update with gradient scaling
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                
+                total_loss += loss.item()
+                batch_count += 1
+                
+            except StopIteration:
+                break
+            
         return loss
 
 
@@ -179,8 +256,10 @@ class AdvancedEnsembleLearner:
                     batch_x = batch_x.cuda()
                     batch_y = batch_y.cuda()
                     # features = classifier(batch_x, extract_features=True)
-                    features, _ = classifier(batch_x)
-                    val_features.append(features[6])
+                    # features, _ = classifier(batch_x) # for dod model
+                    # val_features.append(features[6])# for dod model
+                    features = classifier(batch_x)
+                    val_features.append(features)
                     # val_labels.append(batch_y)
                     
         total_val_features = torch.cat(val_features, dim=1)
@@ -297,7 +376,7 @@ def main():
     attribute_names = ['seismic', 'dip']
     
     
-    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 16, 32), batch_size=args.batch_size) # the resulting 
+    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 32), stride=(1, 32, 32), batch_size=args.batch_size) # the resulting 
     
     attribute_dataloaders = data_factory.get_dataloaders(attribute_names)
     
@@ -312,9 +391,10 @@ def main():
     test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "test" loaders
     attribute_test_loaders = list(zip(attribute_keys, test_values))
     
-    # embed_dims = [72, 36, 36, 36]
+    embed_dims = [72, 36, 36, 36]
     # embed_dims = [4, 2, 2, 2]
-    embed_dims = [16, 8, 8, 8]
+    # embed_dims = [16, 8, 8, 8]
+    # embed_dims = [8, 4, 4, 4]
     heads = 2
     
     # Initialize Advanced Ensemble Learner
@@ -362,7 +442,7 @@ def parse_args():
     parser.add_argument('--height', type=int, default=288, 
                         help='data height size')
     
-    parser.add_argument('--width', type=int, default=16, 
+    parser.add_argument('--width', type=int, default=32, 
                         help='data width size')
 
     parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 
