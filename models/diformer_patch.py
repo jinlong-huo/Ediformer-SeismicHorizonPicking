@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import DataParallel
 from timm.models.layers import DropPath, to_2tuple
 # (, Mlp, PatchEmbed, lecun_normal_,
 #                                 , trunc_normal_)
@@ -311,7 +312,7 @@ class Mixer(nn.Module):
         
         hx = x[:,:self.high_dim,:,:].contiguous() # ([2, 16, 256, 72])
         hx = self.high_mixer(hx)
-    
+        
         lx = x[:,self.high_dim:,:,:].contiguous() # ([2, 8, 256, 72])
         lx = self.low_mixer(lx)
        
@@ -389,6 +390,7 @@ class Diformer(nn.Module):
         self.pre_dense_5 = SingleConvBlock(512, 512, 1)
         self.pre_dense_6 = SingleConvBlock(512, 256, 1)
         self.block_cat = SingleConvBlock(6, 7, stride=1, use_bs=False)  # hed fusion method
+        # self.block_cat = SingleConvBlock(6, 7, stride=1, use_bs=True)  # hed fusion method
         # self.feature_projection = nn.Linear(prev_dim, 288)
 
         # USNet
@@ -417,7 +419,8 @@ class Diformer(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         
         self.apply(weight_init)
-        self.feature_projection = nn.Linear(feature_projection_dim, feature_projection_dim)
+        # below does not have activation fucntion which may lead to explosion
+        self.feature_projection = nn.Linear(feature_projection_dim, 32)
         self.feature_fuse_projection = nn.Linear(feature_projection_dim, 7)
         # self.linear = torch.nn.Linear(288, 7)
 
@@ -484,7 +487,6 @@ class Diformer(nn.Module):
         block_6_attn_dense = self.drop_path(self.attn4(self.norm4(block_6_pre_dense)))
         block_6, _ = self.dblock_6([block_5_add, block_6_attn_dense])
         
-
         # upsampling blocks
         out_1 = self.up_block_1(block_1)
         out_2 = self.up_block_2(block_2)
@@ -514,21 +516,44 @@ class Diformer(nn.Module):
         return projected_features
     
 if __name__ == '__main__':
-    batch_size = 2                                                                  
-    img_height =  64   # 1   352
-    img_width = 288   # 288 352
+    # 1. Check for available GPUs
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Initialize model
+    # model = Diformer(dim=[8, 4, 4, 4], num_heads=2)
+    model = Diformer(dim=[72, 36, 36, 36], num_heads=2)
+    # model = Diformer(dim=[64, 32, 32, 32], num_heads=2)
+
+    # 2. Check if multiple GPUs are available
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs")
+        model = DataParallel(model)
+
+    # 3. Move the model to GPUs (if available)
+    model.to("cuda:0")
+
+    # Example of how to use this model:
+    # Input data (just an example, modify as per your needs)
+    input_tensor = torch.randn(8, 1, 16, 288).to(device)  # Batch size 8, single channel 256x256 image
+
+    # Forward pass
+    output = model(input_tensor)
+    print(output.shape)
+    # batch_size = 2                                                                  
+    # img_height =  64   # 1   352
+    # img_width = 288   # 288 352
     
-    # print
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
-    input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
-    # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
-    print(f"input shape: {input.shape}")
-    embed_dims = [72, 36, 36, 36] # embed dim last dim
-    # embed_dims = [16, 8, 8, 8] # embed dim last dim
-    heads = 2
-    model = Diformer(dim=embed_dims, num_heads=heads).to(device)
-    output = model(input)
-    # print(output[0].shape)
-    print(f"output shapes: {output[0].shape}") # ([2, 7, 64, 288])
+    # # print
+    # device = "cuda:1" if torch.cuda.is_available() else "cpu"
+    # # device = "cpu"
+    # input = torch.rand(batch_size, 1, img_height, img_width).to(device)             
+    # # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
+    # print(f"input shape: {input.shape}")
+    # embed_dims = [72, 36, 36, 36] # embed dim last dim
+    # # embed_dims = [16, 8, 8, 8] # embed dim last dim
+    # heads = 2
+    # model = Diformer(dim=embed_dims, num_heads=heads).to(device)
+    # output = model(input)
+    # # print(output[0].shape)
+    # print(f"output shapes: {output[0].shape}") # ([2, 7, 64, 288])
 
