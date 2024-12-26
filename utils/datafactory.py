@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
+from sklearn.preprocessing import RobustScaler
 
 class SimpleDataset(Dataset):
     """
@@ -34,8 +35,8 @@ class HorizonDataFactory:
     """
     def __init__(self, 
                  attr_dirs: dict,  # Dictionary with attribute names as keys and directories as values
-                 kernel_size: tuple = (1, 288, 64),
-                 stride: tuple = (1, 64, 32),
+                 kernel_size: tuple = (1, 60, 288),
+                 stride: tuple = (1, 60, 288),
                  train_ratio: float = 0.8,
                  batch_size: int = 16,
                  random_seed: int = 0):
@@ -82,10 +83,14 @@ class HorizonDataFactory:
         # Load data
         data = np.load(data_path)
         labels = np.load(label_path)
+      
+        data = np.squeeze(data)
         
-        mean = np.mean(data, axis=0)
-        std = np.std(data, axis=0)
-        data = (data - mean) / std
+        if len(data.shape) > 2:
+            # Reshape to (-1, 288)
+            data = data.reshape(-1, 288)
+            
+        data = RobustScaler().fit_transform(data)
         
         # Convert to tensors
         data = torch.tensor(data, dtype=torch.float) # 571551 288
@@ -103,44 +108,70 @@ class HorizonDataFactory:
         data = data[::100, ::10, :]
         labels = labels[::100, ::10, :]
         
-        # data = data[::5, ::5, :]
-        # labels = labels[::5, ::5, :]
-        
         # Add batch dimension and permute
-        data = np.swapaxes(data, -1, 1)
-        labels = np.swapaxes(labels, -1, 1)
+        data = data[np.newaxis, :]    
+        labels = labels[np.newaxis, :]  
         
-        data = data[np.newaxis, :]    # b, c, 288, 10
-        labels = labels[np.newaxis, :]  # b, c, 288, 10
+        target_height = 16
+        current_height = data.size(2)
+        height_padding = (target_height - (current_height % target_height)) % target_height
+        pad_top = height_padding // 2
+        pad_bottom = height_padding - pad_top
         
-        # Pad data to be divisible by kernel size
+        # Pad only height dimension
         data = F.pad(data, [
-            data.size(3) % self.kw // 2, data.size(3) % self.kw // 2,
-            data.size(2) % self.kh // 2, data.size(2) % self.kh // 2,
-            data.size(1) % self.kc // 2, data.size(1) % self.kc // 2
+            0, 0,                    # width dimension (288)
+            pad_top, pad_bottom,     # height dimension
+            0, 0                     # channel dimension
         ])
         
-        # Apply sliding window (unfold)
-        data = data.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
-        data = data.contiguous().view(-1, self.kc, self.kh, self.kw)
-        data = data.reshape(data.shape[0], -1, self.kh, self.kw)
-        
-        # Pad and unfold labels
         labels = F.pad(labels, [
-            labels.size(3) % self.kw // 2, labels.size(3) % self.kw // 2,
-            labels.size(2) % self.kh // 2, labels.size(2) % self.kh // 2,
-            labels.size(1) % self.kc // 2, labels.size(1) % self.kc // 2
+            0, 0,
+            pad_top, pad_bottom,
+            0, 0
         ])
-        labels = labels.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
-        labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
-        labels = labels.reshape(labels.shape[0], -1, self.kh, self.kw)
         
-        print(f"Processed {attr_name} Data size: ", data.shape)
+        kernel_height = data.size(2) // target_height
+        
+        # Unfold only in height dimension
+        data = data.unfold(2, kernel_height, kernel_height)
+        data = data.permute(0, 1, 2, 4, 3)  # Rearrange to get (B, C, 16, 288)
+        # data = data.contiguous().view(-1, data.size(1), target_height, 288)
+        data = data.contiguous().view(-1, 1, target_height, 288)
+        
+        labels = labels.unfold(2, kernel_height, kernel_height)
+        labels = labels.permute(0, 1, 2, 4, 3)
+        # labels = labels.contiguous().view(-1, labels.size(1), target_height, 288)
+        labels = labels.contiguous().view(-1, 1, target_height, 288)
+        
+        print(f"Processed {attr_name} Data size: {data.shape}")
         print(f"Processed {attr_name} Labels size: {labels.shape}\n")
         
-        # Create dataset
-        # data = data.permute(0, 1, -1, 2)
-        # labels = labels.permute(0, 1, -1, 2)
+        # # Pad data to be divisible by kernel size
+        # data = F.pad(data, [
+        #     data.size(3) % self.kw // 2, data.size(3) % self.kw // 2,
+        #     data.size(2) % self.kh // 2, data.size(2) % self.kh // 2,
+        #     data.size(1) % self.kc // 2, data.size(1) % self.kc // 2
+        # ])
+        
+        
+        # # Apply sliding window (unfold)
+        # data = data.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
+        # data = data.contiguous().view(-1, self.kc, self.kh, self.kw)
+        # data = data.reshape(data.shape[0], -1, self.kh, self.kw)
+        
+        # # Pad and unfold labels
+        # labels = F.pad(labels, [
+        #     labels.size(3) % self.kw // 2, labels.size(3) % self.kw // 2,
+        #     labels.size(2) % self.kh // 2, labels.size(2) % self.kh // 2,
+        #     labels.size(1) % self.kc // 2, labels.size(1) % self.kc // 2
+        # ])
+        # labels = labels.unfold(1, self.kc, self.dc).unfold(2, self.kh, self.dh).unfold(3, self.kw, self.dw)
+        # labels = labels.contiguous().view(-1, self.kc, self.kh, self.kw)
+        # labels = labels.reshape(labels.shape[0], -1, self.kh, self.kw)
+        
+        # print(f"Processed {attr_name} Data size: ", data.shape)
+        # print(f"Processed {attr_name} Labels size: {labels.shape}\n")
         
         full_dataset = SimpleDataset(data, labels)
         
