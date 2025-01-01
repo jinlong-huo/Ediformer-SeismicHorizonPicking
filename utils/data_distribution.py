@@ -135,38 +135,30 @@ def create_visualization(data, file_name):
     
     plot_data = data
     label_column = 'label'
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    # facies_palette = ['#F4D03F', '#F5B041','#DC7633','#6E2C00',
+    #    '#1B4F72','#2E86C1', '#AED6F1']
+    # palette = sns.husl_palette(s=.4)
+    palette = sns.color_palette()
     
-    sns.set_style("whitegrid")
+    sns.set_style("ticks")
+    # fig.set_facecolor('white') 
     pairplot = sns.pairplot(plot_data, 
                            hue=label_column,
                            diag_kind="kde",
                            plot_kws={'alpha': 0.6},
-                           diag_kws={'alpha': 0.6})
-    
-    correlation_matrix = plot_data.corr()
-    
-    sns.heatmap(correlation_matrix,
-                annot=True,
-                cmap='coolwarm',
-                vmin=-1,
-                vmax=1,
-                center=0,
-                ax=ax2)
-    
-    ax2.set_title('Correlation Matrix')
-    
-    plt.tight_layout()
+                           diag_kws={'alpha': 0.6},
+                           palette=palette)
     
     output_dir = './output'
     figures_dir = os.path.join(output_dir, 'figures')
     if not os.path.exists(figures_dir):
         os.makedirs(figures_dir, exist_ok=True)
     
-    filepath = os.path.join(figures_dir, f'Horizon_{file_name}_correlation_matrix.png')
-    plt.savefig(filepath)
+    # Save pairplot
+    pairplot_path = os.path.join(figures_dir, f'Horizon_{file_name}_pairplot.png')
+    pairplot.savefig(pairplot_path)
     
-    return pairplot, fig
+    return pairplot
 
 
 if __name__ == "__main__":
@@ -200,7 +192,5 @@ if __name__ == "__main__":
     
     for i, (il, xl) in enumerate(positions):
         file_name = f'Inline_{il}_Crossline_{xl}'
-        pairplot, correlation_fig = create_visualization(df_list[i], file_name)
+        pairplot = create_visualization(df_list[i], file_name)
      
-        
-    # plot_facies_distribution(seismic_labels)
