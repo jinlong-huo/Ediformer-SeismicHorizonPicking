@@ -1,92 +1,103 @@
-import json
+# import json
 
-import numpy as np
-import torch
-from torchvision import models
-import matplotlib.pyplot as plt
+# import numpy as np
+# import torch
+# from torchvision import models
+# import matplotlib.pyplot as plt
+# import shap
+# mean = [0.485, 0.456, 0.406]
+# std = [0.229, 0.224, 0.225]
+
+
+# def normalize(image):
+#     if image.max() > 1:
+#         image /= 255
+#     image = (image - mean) / std
+#     # in addition, roll the axis so that they suit pytorch
+#     return torch.tensor(image.swapaxes(-1, 1).swapaxes(2, 3)).float()
+# # load the model
+
+# # model = models.vgg16(pretrained=False)  # Initialize without pretrained weights
+# # Then load the local weights
+# # state_dict = torch.load('/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/vgg16-397923af.pth')
+# # model.load_state_dict(state_dict)
+# # model.eval()
+
+# # model_weights = '/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/vgg16-397923af.pth'
+# model = models.vgg16(pretrained=True).eval()
+
+# X, y = shap.datasets.imagenet50()
+# X /= 255
+
+# to_explain = X[[39, 41]]
+
+# # load the ImageNet class names
+# url = "https://s3.amazonaws.com/deep-learning-models/image-models/imagenet_class_index.json"
+# fname = shap.datasets.cache(url)
+# # fname = '/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/imagenet_class_index.json'
+
+# with open(fname) as f:
+#     class_names = json.load(f)
+
+# e = shap.GradientExplainer((model, model.features[7]), normalize(X))
+# shap_values, indexes = e.shap_values(normalize(to_explain), ranked_outputs=2, nsamples=200)
+
+# # get the names for the classes
+# index_names = np.vectorize(lambda x: class_names[str(x)][1])(indexes)
+
+# # plot the explanations
+# shap_values = [np.swapaxes(np.swapaxes(s, 2, 3), 1, -1) for s in shap_values]
+
+# shap.image_plot(shap_values, to_explain, index_names)
+# plt.savefig('shap_analysis.png')
+
 import shap
-mean = [0.485, 0.456, 0.406]
-std = [0.229, 0.224, 0.225]
-
-import os
-import torch
-from PIL import Image
-from torchvision import transforms
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.datasets import load_iris
+import matplotlib.pyplot as plt
+import pickle
 
-# def load_local_images(image_dir):
-#     # Standard ImageNet preprocessing
-#     preprocess = transforms.Compose([
-#         transforms.Resize(256),
-#         transforms.CenterCrop(224),
-#         transforms.ToTensor(),
-#         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-#                            std=[0.229, 0.224, 0.225])
-#     ])
-    
-#     images = []
-#     labels = []
-    
-#     # Load all images from the directory
-#     for img_name in os.listdir(image_dir):
-#         if img_name.endswith(('.jpg', '.jpeg', '.png')):
-#             img_path = os.path.join(image_dir, img_name)
-#             # Open and preprocess the image
-#             img = Image.open(img_path).convert('RGB')
-#             img_tensor = preprocess(img)
-#             images.append(img_tensor.numpy())
-            
-#             # If you have labels, you can add them here
-#             # labels.append(label)
-    
-#     # Stack all images into a single numpy array
-#     X = np.stack(images)
-    
-#     return X, np.array(labels)  # Return labels if you have them
+# 1. Load dataset (for this example, using the Iris dataset)
+data = load_iris()
+X = data.data
+y = data.target
 
-# # Use the function
-# image_dir = '/home/dell/disk1/Jinlong/shap/data/imagenet50'
-# X, y = load_local_images(image_dir)
+# 2. Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-def normalize(image):
-    if image.max() > 1:
-        image /= 255
-    image = (image - mean) / std
-    # in addition, roll the axis so that they suit pytorch
-    return torch.tensor(image.swapaxes(-1, 1).swapaxes(2, 3)).float()
-# load the model
+# 3. Train a simple decision tree classifier
+model = DecisionTreeClassifier(random_state=42)
+model.fit(X_train, y_train)
 
-# model = models.vgg16(pretrained=False)  # Initialize without pretrained weights
-# Then load the local weights
-# state_dict = torch.load('/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/vgg16-397923af.pth')
-# model.load_state_dict(state_dict)
-# model.eval()
+# 4. Use SHAP to explain the model's predictions
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X_test)
 
-# model_weights = '/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/vgg16-397923af.pth'
-model = models.vgg16(pretrained=True).eval()
+# The shap_values is a list, and for multi-class classification (like Iris), 
+# each index corresponds to a class. For instance:
+# - shap_values[0] corresponds to class 0
+# - shap_values[1] corresponds to class 1
+# - shap_values[2] corresponds to class 2 (for Iris dataset)
 
-X, y = shap.datasets.imagenet50()
-X /= 255
+# Here we select the SHAP values for class 0 (you can change this depending on your focus)
+shap_values_class_0 = shap_values[0]
 
-to_explain = X[[39, 41]]
+# 5. Visualize the SHAP values for the first instance in the test set
+shap.initjs()  # Initialize the SHAP JS visualization (optional, only for Jupyter or IPython)
+shap.summary_plot(shap_values_class_0, X_test, feature_names=data.feature_names)
 
-# load the ImageNet class names
-url = "https://s3.amazonaws.com/deep-learning-models/image-models/imagenet_class_index.json"
-fname = shap.datasets.cache(url)
-# fname = '/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/models/imagenet_class_index.json'
+# 6. Save the SHAP values to a local file (class 0 in this case)
+shap_values_file = "shap_values_class_0.pkl"
+with open(shap_values_file, 'wb') as f:
+    pickle.dump(shap_values_class_0, f)
 
-with open(fname) as f:
-    class_names = json.load(f)
+# 7. Optionally, you can save a plot to an image file
+summary_plot_file = "shap_summary_plot_class_0.png"
+plt.savefig(summary_plot_file)
 
-e = shap.GradientExplainer((model, model.features[7]), normalize(X))
-shap_values, indexes = e.shap_values(normalize(to_explain), ranked_outputs=2, nsamples=200)
-
-# get the names for the classes
-index_names = np.vectorize(lambda x: class_names[str(x)][1])(indexes)
-
-# plot the explanations
-shap_values = [np.swapaxes(np.swapaxes(s, 2, 3), 1, -1) for s in shap_values]
-
-
-shap.image_plot(shap_values, to_explain, index_names)
-plt.savefig('shap_analysis.png')
+# Print confirmation of saved files
+print(f"SHAP values for class 0 saved to {shap_values_file}")
+print(f"SHAP summary plot for class 0 saved to {summary_plot_file}")
