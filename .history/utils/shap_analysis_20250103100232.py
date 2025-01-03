@@ -48,19 +48,19 @@ plt.savefig('shap_results/summary_plot.png')
 plt.close()
 
 plt.figure(figsize=(10, 6))
-shap.summary_plot(shap_values[:,:, 1], X_test, plot_type='bar')  # Use class 1
+shap.summary_plot(shap_values[1], X_test, plot_type='bar')  # Use class 1
 plt.tight_layout()
 plt.savefig('shap_results/feature_importance_plot.png')
 plt.close()
 
 # Save SHAP values to CSV (using class 1 values for binary classification)
-shap_df = pd.DataFrame(shap_values[:,:, 1], columns=X.columns)  # Use class 1
+shap_df = pd.DataFrame(shap_values[1], columns=X.columns)  # Use class 1
 shap_df.to_csv('shap_results/shap_values.csv', index=False)
 
 # Calculate and save feature importance summary
 feature_importance = pd.DataFrame({
     'feature': X.columns,
-    'importance': np.abs(shap_values[:,:, 1]).mean(axis=0)  # Use class 1
+    'importance': np.abs(shap_values[1]).mean(axis=0)  # Use class 1
 })
 feature_importance = feature_importance.sort_values('importance', ascending=False)
 feature_importance.to_csv('shap_results/feature_importance.csv', index=False)
