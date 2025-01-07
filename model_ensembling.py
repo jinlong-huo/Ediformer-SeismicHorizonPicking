@@ -178,7 +178,6 @@ class AdvancedEnsembleLearner:
             
         return loss
 
-
     def validate_fusion_model(self, validation_dataloaders, criterion, fm_path, early_stopping, fusion_scheduler):
         
         self.fusion_model.eval()
@@ -541,7 +540,8 @@ def main():
     # freq phase seismic dip amp
     # attribute_names = ['freq', 'phase', 'seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
     # attribute_names = [ 'amp', 'complex', 'coherence','average_zero','azimuth']
-    attribute_names = ['seismic', 'freq', 'dip', 'phase']
+    # attribute_names = ['seismic', 'freq', 'dip', 'phase']
+    attribute_names = ['seismic', 'phase']
     
     
     data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 32), stride=(1, 32, 32), batch_size=args.batch_size) # the resulting 
@@ -606,10 +606,10 @@ def parse_args():
     parser.add_argument('--is_training', type=bool, default=True, 
                         help='Script in training mode')
     
-    parser.add_argument('--num_epochs', type=int, default=3, 
+    parser.add_argument('--num_epochs', type=int, default=30, 
                         help='Overall training epochs')
     
-    parser.add_argument('--batch_size', type=int, default=16, 
+    parser.add_argument('--batch_size', type=int, default=36, 
                         help='Training batch size')
     
     parser.add_argument('--height', type=int, default=288, 
@@ -652,11 +652,11 @@ def parse_args():
         "seismic": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy", 
                     "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
-                 "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
+        #          "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
-        "dip": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
+        # "dip": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy", 
+        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
         
         "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", 
                   "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
