@@ -6,8 +6,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, TensorDataset
 
 """
 
@@ -62,7 +67,6 @@ def create_visualization(data, file_name):
     features (list): List of feature column names
     label_column (str): Name of the label column
     """
-    
     plot_data = data
     label_column = 'label'
     # facies_palette = ['#F4D03F', '#F5B041','#DC7633','#6E2C00',
@@ -81,12 +85,14 @@ def create_visualization(data, file_name):
     
     output_dir = './output'
     figures_dir = os.path.join(output_dir, 'figures')
+    
     if not os.path.exists(figures_dir):
         os.makedirs(figures_dir, exist_ok=True)
     
     # Save pairplot
     pairplot_path = os.path.join(figures_dir, f'Horizon_{file_name}_pairplot.png')
-    pairplot.savefig(pairplot_path)
+    pairplot.savefig(pairplot_path, dpi=300, bbox_inches='tight')
+    plt.close()
     
     return pairplot
 
@@ -148,7 +154,6 @@ def prepare_trace_data(traces_volume, labels, positions, attr_name, normalize=Tr
     list: List of DataFrames, one for each trace position
     dict: Scaler objects for each attribute (if normalization is applied)
     """
-    from sklearn.preprocessing import StandardScaler
     
     df_list = []
     scalers = {}  # Dictionary to store scalers for each attribute
@@ -183,11 +188,17 @@ def prepare_trace_data(traces_volume, labels, positions, attr_name, normalize=Tr
     return df_list
 
 
-
 class ShapAnalyzer:
-    def __init__(self, output_dir: str = 'shap_results'):
-        """Initialize SHAP analysis pipeline."""
+    def __init__(self, output_dir: str = 'shap_results', attr_name: List[str] = None):
+        """
+        Initialize SHAP analysis pipeline.
+        
+        Args:
+            output_dir: Directory to save SHAP analysis results
+            attr_name: List of feature names to use in the analysis
+        """
         self.output_dir = output_dir
+        self.attr_name = attr_name
         self.create_output_directory()
         
     def create_output_directory(self):
@@ -201,7 +212,8 @@ class ShapAnalyzer:
         for df in df_list:
             feature_cols = [col for col in df.columns if col != 'label']
             X_current = df[feature_cols].copy()
-            X_current.columns = [f'feature_{i}' for i in range(len(feature_cols))]
+            # X_current.columns = [f'feature_{i}' for i in range(len(feature_cols))]
+            X_current.columns = self.attr_name[:len(feature_cols)]
             y_current = df['label']
             
             X_list.append(X_current)
@@ -212,6 +224,7 @@ class ShapAnalyzer:
     def train_model(self, X: pd.DataFrame, y: pd.Series) -> Tuple[RandomForestClassifier, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         """Train Random Forest model and split data."""
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
         return model, X_train, y_train, X_test, y_test
@@ -332,33 +345,244 @@ class ShapAnalyzer:
             'feature_importance': global_importance_df
         }
 
+class SimpleClassifier(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, num_classes: int):
+        """
+        Simple neural network classifier.
+        
+        Args:
+            input_dim: Number of input features
+            hidden_dim: Number of hidden units
+            num_classes: Number of output classes
+        """
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, num_classes)
+        )
+    
+    def forward(self, x):
+        return self.network(x)
+
+class TorchShapAnalyzer:
+    def __init__(self, output_dir: str = 'torch_shap_results', attr_name: List[str] = None):
+        """
+        Initialize PyTorch-based SHAP analysis pipeline.
+        
+        Args:
+            output_dir: Directory to save SHAP analysis results
+            attr_name: List of feature names to use in the analysis
+        """
+        self.output_dir = output_dir
+        self.attr_name = attr_name
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.create_output_directory()
+        
+    def create_output_directory(self):
+        """Create directory for SHAP results if it doesn't exist."""
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+    def prepare_data(self, df_list: List[pd.DataFrame]) -> Tuple[pd.DataFrame, pd.Series]:
+        """Prepare and combine data from multiple DataFrames."""
+        X_list, y_list = [], []
+        
+        for df in df_list:
+            feature_cols = [col for col in df.columns if col != 'label']
+            X_current = df[feature_cols].copy()
+            X_current.columns = self.attr_name[:len(feature_cols)]
+            y_current = df['label']
+            
+            X_list.append(X_current)
+            y_list.append(y_current)
+        
+        return pd.concat(X_list, axis=0, ignore_index=True), pd.concat(y_list, axis=0, ignore_index=True)
+    
+    def train_model(self, X: pd.DataFrame, y: pd.Series) -> Tuple[nn.Module, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """Train PyTorch model and split data."""
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Convert to PyTorch tensors
+        X_train_tensor = torch.FloatTensor(X_train.values).to(self.device)
+        y_train_tensor = torch.LongTensor(y_train.values).to(self.device)
+        
+        # Create model
+        input_dim = X.shape[1]
+        hidden_dim = 64
+        num_classes = len(np.unique(y))
+        model = SimpleClassifier(input_dim, hidden_dim, num_classes).to(self.device)
+        
+        # Training parameters
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        
+        # Create DataLoader
+        train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+        
+        # Training loop
+        num_epochs = 50
+        for epoch in range(num_epochs):
+            model.train()
+            for batch_X, batch_y in train_loader:
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+        
+        return model, X_train, y_train, X_test, y_test
+    
+    def model_predict(self, model: nn.Module, X: np.ndarray) -> np.ndarray:
+        """Wrapper function for model prediction to use with SHAP."""
+        model.eval()
+        with torch.no_grad():
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            outputs = model(X_tensor)
+            probas = torch.softmax(outputs, dim=1)
+            return probas.cpu().numpy()
+    
+    def generate_shap_values(self, model: nn.Module, X_test: pd.DataFrame) -> List[np.ndarray]:
+        """Generate SHAP values using KernelExplainer."""
+        # Create background dataset
+        background = shap.kmeans(X_test.values, 10)
+        
+        # Initialize KernelExplainer
+        explainer = shap.KernelExplainer(
+            lambda x: self.model_predict(model, x),
+            background
+        )
+        
+        # Calculate SHAP values
+        shap_values = explainer.shap_values(X_test.values)
+        return shap_values
+    
+    def plot_class_shap_analysis(self, shap_values: List[np.ndarray], X_test: pd.DataFrame, class_idx: int):
+        """Generate and save SHAP plots for a specific class."""
+        # Summary plot (beeswarm)
+        plt.figure(figsize=(12, 8))
+        shap.summary_plot(shap_values[:,:, class_idx], X_test, show=False)
+        plt.title(f'SHAP Summary Plot - Class {class_idx}')
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/summary_beeswarm_class_{class_idx}.png')
+        plt.close()
+        
+        # Bar plot
+        plt.figure(figsize=(12, 8))
+        shap.summary_plot(shap_values[:,:, class_idx], X_test, plot_type='bar', show=False)
+        plt.title(f'Feature Importance Plot - Class {class_idx}')
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/feature_importance_bar_class_{class_idx}.png')
+        plt.close()
+        
+        # Heat map
+        plt.figure(figsize=(15, 10))
+        shap.plots.heatmap(shap.Explanation(
+            values=shap_values[:,:, class_idx],
+            base_values=np.zeros(len(X_test)),
+            data=X_test,
+            feature_names=X_test.columns
+        ), show=False)
+        plt.title(f'SHAP Heat Map - Class {class_idx}')
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/heatmap_class_{class_idx}.png')
+        plt.close()
+    
+    def save_feature_importance(self, shap_values: List[np.ndarray], X: pd.DataFrame, n_classes: int) -> pd.DataFrame:
+        """Save feature importance analysis to CSV files."""
+        # Per-class importance
+        for i in range(n_classes):
+            feature_importance = pd.DataFrame({
+                'feature': X.columns,
+                'importance': np.abs(shap_values[i]).mean(axis=1)
+            }).sort_values('importance', ascending=False)
+            feature_importance.to_csv(f'{self.output_dir}/feature_importance_class_{i}.csv', index=False)
+        
+        # Global importance
+        global_importance = np.zeros(X.shape[1])
+        for i in range(n_classes):
+            global_importance += np.abs(shap_values[i]).mean(axis=1)
+        
+        global_importance_df = pd.DataFrame({
+            'feature': X.columns,
+            'importance': global_importance / n_classes
+        }).sort_values('importance', ascending=False)
+        global_importance_df.to_csv(f'{self.output_dir}/global_feature_importance.csv', index=False)
+        
+        return global_importance_df
+    
+    def run_analysis(self, df_list: List[pd.DataFrame]) -> Dict:
+        """Run complete SHAP analysis pipeline."""
+        # Prepare data
+        X, y = self.prepare_data(df_list)
+        
+        # Train model
+        model, X_train, y_train, X_test, y_test = self.train_model(X, y)
+        
+        # Generate SHAP values
+        shap_values = self.generate_shap_values(model, X_test)
+        
+        # Generate plots for each class
+        n_classes = len(np.unique(y))
+        for i in range(n_classes):
+            self.plot_class_shap_analysis(shap_values, X_test, i)
+        
+        # Save feature importance analysis
+        global_importance_df = self.save_feature_importance(shap_values, X_test, n_classes)
+        
+        return {
+            'model': model,
+            'shap_values': shap_values,
+            'X_test': X_test,
+            'y_test': y_test,
+            'feature_importance': global_importance_df
+        }
+
 
 if __name__ == "__main__":
     np.random.seed(42)
     n_samples = 100
-    attr_name = ['seismic', 'freq', 'dip', 'phase', 'rms']
+    # attr_name = ['seismic', 'freq', 'dip', 'phase', 'rms',  'complex', 'coherence']
+    attr_name = ['seismic', 'freq', 'dip', 'phase', 'rms',  'complex', 'coherence','azc']
     
+    # variance amp and amp can't be used for this kdipp and kdipq has concentrated 
     # Load data
     seismic_volume_1 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy')
     seismic_volume_2 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy')
     seismic_volume_3 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy')
     seismic_volume_4 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy')
     seismic_volume_5 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_RMSAmp.npy')
+    seismic_volume_6 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy')
+    seismic_volume_7 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy')
+    seismic_volume_8 = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy')
     
     seismic_labels = np.load('/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy')
     
     # Reshape data
     seismic_volume_1 = np.squeeze(seismic_volume_1).reshape(-1, 951, 288)
-    seismic_volume_2 = seismic_volume_2.reshape(-1, 951, 288)
     seismic_volume_3 = np.swapaxes(seismic_volume_3, -1, 1)
+    
+    seismic_volume_2 = seismic_volume_2.reshape(-1, 951, 288)
     seismic_volume_4 = seismic_volume_4.reshape(-1, 951, 288)
     seismic_volume_5 = seismic_volume_5.reshape(-1, 951, 288)
+    seismic_volume_6 = seismic_volume_6.reshape(-1, 951, 288)
+    seismic_volume_7 = seismic_volume_7.reshape(-1, 951, 288)
+    seismic_volume_8 = seismic_volume_8.reshape(-1, 951, 288)
+    
     seismic_labels = seismic_labels.reshape(-1, 951, 288)
     
     n_traces = 5
     seed = 42
     seismic_volume = [seismic_volume_1, seismic_volume_2, seismic_volume_3, 
-                      seismic_volume_4, seismic_volume_5]
+                      seismic_volume_4, seismic_volume_5, seismic_volume_6, 
+                      seismic_volume_7, 
+                      seismic_volume_8]
+                    
     
     # Select random traces
     selected_traces_volume, selected_labels, positions = select_random_traces(
@@ -370,16 +594,20 @@ if __name__ == "__main__":
         selected_traces_volume, selected_labels, positions, attr_name, normalize=True
     )
     
-    # Create pairplot
-    for i, (il, xl) in enumerate(positions):
-        file_name = f'Inline_{il}_Crossline_{xl}'
-        pairplot = create_visualization(df_list[i], file_name)
+    # # Create pairplot
+    # for i, (il, xl) in enumerate(positions):
+    #     file_name = f'Inline_{il}_Crossline_{xl}'
+    #     pairplot = create_visualization(df_list[i], file_name)
     
-    # SHAP analysis    
-    analyzer = ShapAnalyzer()
+    # SHAP analysis with simple tree   
+    analyzer = ShapAnalyzer(output_dir='shap_results', attr_name=attr_name)
     results = analyzer.run_analysis(df_list)  # df_list from your data preparation
     
+    # SHAP analysis with simple net   
+    analyzer = TorchShapAnalyzer(output_dir='torch_shap_results', attr_name=attr_name)
+    results = analyzer.run_analysis(df_list)
+    
     # Print top features globally
-    print("\nGlobal top 5 important features:")
+    print("\nGlobal top 8 important features:")
     print(results['feature_importance'].head())
     
