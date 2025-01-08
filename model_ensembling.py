@@ -25,6 +25,8 @@ class AdvancedEnsembleLearner:
     Advanced Ensemble Learning with Feature Fusion
     """
     def __init__(self, dim: List[Dict], num_heads: List[Dict], meta_model_path, fusion_model_path, num_classes: int, num_classifiers:int, height: int = 288, width: int = 1, patience: int=7):
+        
+        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self.num_classes = num_classes
         self.height = height
         self.width = width
@@ -37,7 +39,7 @@ class AdvancedEnsembleLearner:
                 dim=dim, 
                 num_heads=num_heads,
                 feature_projection_dim=288 # define projection dim regarding model_patch
-            ).cuda() for _ in range(num_classifiers)
+            ).to(self.device) for _ in range(num_classifiers)
         ])
         
         total_feature_dim = num_classifiers * num_classes
@@ -48,7 +50,7 @@ class AdvancedEnsembleLearner:
             fusion_height=height,
             fusion_width=width
         )
-        self.fusion_model = self.fusion_model.cuda()
+        self.fusion_model = self.fusion_model.to(self.device)
         
         
     def train_meta_models(self, classifier, train_loader, optimizer, attr_name, epoch):
@@ -58,11 +60,11 @@ class AdvancedEnsembleLearner:
         scaler = torch.cuda.amp.GradScaler()
         torch.nn.utils.clip_grad_norm_(classifier.parameters(), max_norm=1.0)
         l_weight = [0.7, 0.7, 1.1, 1.1, 0.3, 0.3, 7.8]
-        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).cuda()
+        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).to(self.device)
         
         for batch_x, batch_y in train_loader:
-            batch_x = batch_x.cuda()
-            batch_y = batch_y.cuda()
+            batch_x = batch_x.to(self.device)
+            batch_y = batch_y.to(self.device)
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 criterion = nn.CrossEntropyLoss(weight=l_weight_tensor)
@@ -89,12 +91,12 @@ class AdvancedEnsembleLearner:
         correct = 0
         total = 0
         l_weight = [0.7, 0.7, 1.1, 1.1, 0.3, 0.3, 7.8]
-        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).cuda()
+        l_weight_tensor = torch.tensor(l_weight, requires_grad=False).to(self.device)
         weighted_criterion = nn.CrossEntropyLoss(weight=l_weight_tensor)
         with torch.no_grad():
             for i, (batch_x, batch_y) in enumerate(val_loader):
-                batch_x = batch_x.cuda()
-                batch_y = batch_y.cuda()
+                batch_x = batch_x.to(self.device)
+                batch_y = batch_y.to(self.device)
                 batch_y = torch.squeeze(batch_y.long())
                 # outputs, _ = classifier(batch_x) # for dod model
                 # loss = weighted_criterion(outputs[6], batch_y.long()) # for dod model
@@ -132,7 +134,7 @@ class AdvancedEnsembleLearner:
                 first_batch = next(loader_iters[0])
                 batch_size = first_batch[0].size(0)  
                 first_labels = first_batch[1]
-                x = first_batch[0].cuda()
+                x = first_batch[0].to(self.device)
                 features = self.classifiers[0](x)
                 batch_features.append(features)
                 
@@ -151,7 +153,7 @@ class AdvancedEnsembleLearner:
                                 padding = torch.zeros(padding_shape, device=batch_x.device)
                                 batch_x = torch.cat([batch_x, padding], dim=0)
                         
-                        batch_x = batch_x.cuda()
+                        batch_x = batch_x.to(self.device)
                         features = classifier(batch_x)
                         batch_features.append(features)
                         
@@ -161,7 +163,7 @@ class AdvancedEnsembleLearner:
                 total_features = torch.cat(batch_features, dim=1)
                 
                 optimizer.zero_grad()
-                labels = first_labels.cuda()
+                labels = first_labels.to(self.device)
                 labels = torch.squeeze(labels)
                 
                 fusion_outputs = self.fusion_model(total_features)
@@ -214,20 +216,20 @@ class AdvancedEnsembleLearner:
                     # Process first loader
                     first_batch = next(loader_iters[0])
                     first_labels = first_batch[1]
-                    x = first_batch[0].cuda()
+                    x = first_batch[0].to(self.device)
                     features = self.classifiers[0](x)
                     batch_features.append(features)
                     
                     # Process remaining loaders
                     for classifier, loader_iter in zip(self.classifiers[1:], loader_iters[1:]):
                         batch_x, _ = next(loader_iter)
-                        batch_x = batch_x.cuda()
+                        batch_x = batch_x.to(self.device)
                         features = classifier(batch_x)
                         batch_features.append(features)
                     
                     # Process this batch
                     total_features = torch.cat(batch_features, dim=1)
-                    labels = first_labels.cuda()
+                    labels = first_labels.to(self.device)
                     labels = torch.squeeze(labels)
                     
                     outputs = self.fusion_model(total_features)
@@ -387,7 +389,7 @@ class AdvancedEnsembleLearner:
         
         def load_checkpoint(model, path, optimizer=None, scheduler=None):
             try:
-                checkpoint = torch.load(path)
+                checkpoint = torch.load(path, map_location=self.device)
                 
                 # Handle both old and new checkpoint formats
                 if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
@@ -444,7 +446,7 @@ class AdvancedEnsembleLearner:
                 dim=self.dim,  
                 num_heads=self.num_heads,
                 feature_projection_dim=288
-            ).cuda()
+            ).to(self.device)
             
             meta_model = load_checkpoint(meta_model, model_path)
             meta_model.eval()  # Explicit eval mode
@@ -480,15 +482,15 @@ class AdvancedEnsembleLearner:
                     
                     # Get first batch to get labels
                     first_batch = next(loader_iters[0])
-                    batch_labels = first_batch[1].cuda()
-                    batch_x = first_batch[0].cuda()
+                    batch_labels = first_batch[1].to(self.device)
+                    batch_x = first_batch[0].to(self.device)
                     features = meta_models[attr_names[0]](batch_x)
                     batch_features.append(features)
                     
                     # Process remaining attributes
                     for classifier, loader_iter, attr_name in zip(list(meta_models.values())[1:], loader_iters[1:], attr_names[1:]):
                         batch_x, _ = next(loader_iter)
-                        batch_x = batch_x.cuda()
+                        batch_x = batch_x.to(self.device)
                         features = classifier(batch_x)
                         batch_features.append(features)
                     
@@ -683,6 +685,7 @@ def main():
         print("============ Begin testing ============\n") 
 
         results = ensemble_learner.predict(embed_dims, heads, attribute_test_loaders)
+        
         if results is not None:
             predictions = results['predictions'].cpu().numpy()
             labels = results['labels'].cpu().numpy()
@@ -718,10 +721,13 @@ def main():
 def parse_args():
     parser = argparse.ArgumentParser(description='Diformer_trainer.')
     
-    parser.add_argument('--is_training', type=bool, default=True, # False
+    parser.add_argument('--device', type=str, default='cuda:1',
+                    help='device configuration')
+    
+    parser.add_argument('--is_training', type=bool, default=False, # False
                         help='Script in training mode')
     
-    parser.add_argument('--num_epochs', type=int, default=10, 
+    parser.add_argument('--num_epochs', type=int, default=100, 
                         help='Overall training epochs')
     
     parser.add_argument('--batch_size', type=int, default=36, 
@@ -742,8 +748,8 @@ def parse_args():
     parser.add_argument('--is_testing', type=bool, default=True,
                         help='Script in testing mode')
     
-    parser.add_argument('--device', type=str, default='cuda:1',
-                        help='device configuration')
+    # parser.add_argument('--device', type=str, default='cuda:1',
+    #                     help='device configuration')
     
     parser.add_argument('--embed_dims', type=list, default=[16, 8, 8, 8],
                         help='Script in testing mode')
