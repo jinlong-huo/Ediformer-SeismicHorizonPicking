@@ -105,8 +105,8 @@ class HorizonDataFactory:
         labels = labels[:600, :, :]
         
         # Change here to adjust data volume you use
-        data = data[::100, ::10, :]
-        labels = labels[::100, ::10, :]
+        data = data[::10, ::10, :]
+        labels = labels[::10, ::10, :]
         
         # Add batch dimension and permute
         data = data[np.newaxis, :]    
