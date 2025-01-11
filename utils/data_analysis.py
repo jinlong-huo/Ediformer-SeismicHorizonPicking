@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple, Union, Type
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,14 +25,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-
+from dataclasses import dataclass
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 import warnings
 from contextlib import contextmanager
 
-from check_cpu_info import get_optimal_cpu_count, monitor_cpu_usage
+from utils.check_cpu_info import get_optimal_cpu_count, monitor_cpu_usage
 from models.UNet import UNetClassifier
 
 """
@@ -41,85 +41,12 @@ This code is for displaying label distribution
 
 """
 
-
-
-# class ResourceMonitor:
-#     """Monitor computational resources including GPU during execution"""
-#     def __init__(self):
-#         self.start_time = None
-#         self.start_cpu_memory = None
-#         self.start_gpu_memory = None
-#         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#         self.using_gpu = torch.cuda.is_available()
-        
-#     def get_gpu_memory_usage(self):
-#         """Get current GPU memory usage in MB"""
-#         if not self.using_gpu:
-#             return 0
-            
-#         try:
-#             # Get current GPU memory usage
-#             memory_used = torch.cuda.memory_allocated() / 1024 / 1024  # Convert to MB
-#             memory_cached = torch.cuda.memory_reserved() / 1024 / 1024  # Convert to MB
-#             return memory_used, memory_cached
-#         except Exception as e:
-#             print(f"Warning: Could not get GPU memory usage: {e}")
-#             return 0, 0
-        
-#     def start(self):
-#         """Start monitoring resources"""
-#         self.start_time = time.time()
-#         self.start_cpu_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-        
-#         if self.using_gpu:
-#             # Clear GPU cache before starting measurement
-#             torch.cuda.empty_cache()
-#             self.start_gpu_memory = self.get_gpu_memory_usage()
-#             # Force GPU sync to ensure accurate timing
-#             if torch.cuda.is_available():
-#                 torch.cuda.synchronize()
-        
-#     def stop(self):
-#         """Stop monitoring and return resource usage"""
-#         if self.using_gpu and torch.cuda.is_available():
-#             torch.cuda.synchronize()  # Ensure all GPU operations are completed
-            
-#         end_time = time.time()
-#         end_cpu_memory = psutil.Process().memory_info().rss / 1024 / 1024
-        
-#         resources = {
-#             'execution_time': end_time - self.start_time,
-#             'cpu_memory_usage': end_cpu_memory - self.start_cpu_memory,
-#         }
-        
-#         if self.using_gpu:
-#             end_gpu_memory = self.get_gpu_memory_usage()
-#             resources.update({
-#                 'gpu_memory_allocated': end_gpu_memory[0] - self.start_gpu_memory[0],
-#                 'gpu_memory_cached': end_gpu_memory[1] - self.start_gpu_memory[1],
-#                 'gpu_total_memory': torch.cuda.get_device_properties(0).total_memory / 1024 / 1024,
-#                 'gpu_utilization': self.get_gpu_utilization()
-#             })
-            
-#         return resources
-    
-#     def get_gpu_utilization(self):
-#         """Get GPU utilization percentage"""
-#         if not self.using_gpu:
-#             return 0
-            
-#         try:
-#             return torch.cuda.utilization()
-#         except Exception as e:
-#             print(f"Warning: Could not get GPU utilization: {e}")
-#             return 0
-            
-#     def clear_gpu_memory(self):
-#         """Clear GPU memory cache"""
-#         if self.using_gpu:
-#             torch.cuda.empty_cache()
-            
-
+@dataclass
+class AttributeContribution:
+    attribute: str
+    marginal_gain: float
+    cumulative_f1: float
+    relative_importance: float
 
 class ResourceMonitor:
     """Enhanced monitor for computational resources including GPU during execution"""
@@ -501,16 +428,111 @@ class BaseShapAnalyzer:
         plt.savefig(f'{self.output_dir}/combined_evaluation_results.png', 
                     dpi=300, bbox_inches='tight', pad_inches=0.5)
         plt.close()
+    
+
+    # def _calculate_attribute_contributions(self, results: List[Dict]) -> List[AttributeContribution]:
+    #     """Calculate the contribution of each attribute to the overall performance"""
+    #     contributions = []
+    #     prev_f1 = 0
         
+    #     # Calculate absolute gains for normalization
+    #     gains = [r['f1_score_mean'] - prev_f1 for r in results]
+    #     total_absolute_gain = sum(abs(gain) for gain in gains)
+        
+    #     for i, result in enumerate(results):
+    #         current_f1 = result['f1_score_mean']
+    #         marginal_gain = current_f1 - prev_f1
+            
+    #         # Calculate relative importance using absolute values
+    #         relative_importance = (abs(marginal_gain) / total_absolute_gain * 100) if total_absolute_gain > 0 else 0
+            
+    #         contribution = AttributeContribution(
+    #             attribute=result['attributes'][-1],  # Get the newly added attribute
+    #             marginal_gain=marginal_gain,
+    #             cumulative_f1=current_f1,
+    #             relative_importance=relative_importance
+    #         )
+    #         contributions.append(contribution)
+    #         prev_f1 = current_f1
+            
+    #     return contributions
+
+    def _plot_comprehensive_results(self, results: List[Dict], contributions: List[Dict], tau=0.05):
+        """Create comprehensive visualization including attribute contributions"""
+        # Create figure with subplots
+        plt.figure(figsize=(20, 10))
+        plt.subplots_adjust(right=0.85, wspace=0.4)
+        
+        n_attrs = [r['n_attributes'] for r in results]
+        attrs = [c['attribute'] for c in contributions]
+        
+        # Plot 1: Performance with error bars
+        plt.subplot(221)
+        scores = [r['f1_score_mean'] for r in results]
+        std = [r['f1_score_std'] for r in results]
+        plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.xlabel('Number of Attributes')
+        plt.ylabel('F1 Score')
+        plt.title('Performance vs Number of Attributes')
+        
+        # Plot 2: Marginal Gains
+        plt.subplot(222)
+        gains = [c['marginal_gain'] for c in contributions]
+        plt.bar(attrs, gains, color=['g' if g >= 0 else 'r' for g in gains])
+        plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.xlabel('Attributes')
+        plt.ylabel('Marginal Gain')
+        plt.title('Marginal Gain per Attribute')
+        plt.xticks(rotation=45, ha='right')
+        plt.legend()
+        
+        # Plot 3: Resource Usage
+        ax3 = plt.subplot(223)
+        times = [r['resources']['execution_time'] for r in results]
+        memory = [r['resources']['cpu_memory_usage'] for r in results]
+        
+        ax4 = ax3.twinx()
+        line1 = ax3.plot(n_attrs, times, marker='o', color='blue', label='Time (s)')
+        line2 = ax4.plot(n_attrs, memory, marker='s', color='red', label='Memory (MB)')
+        
+        ax3.set_xlabel('Number of Attributes')
+        ax3.set_ylabel('Time (seconds)', color='blue')
+        ax4.set_ylabel('Memory (MB)', color='red')
+        ax3.tick_params(axis='y', labelcolor='blue')
+        ax4.tick_params(axis='y', labelcolor='red')
+        
+        lines = line1 + line2
+        labels = [l.get_label() for l in lines]
+        ax3.legend(lines, labels, loc='upper left')
+        plt.title('Resource Usage')
+        
+        # Plot 4: Cumulative Performance
+        plt.subplot(224)
+        cumulative_f1 = [c['cumulative_f1'] for c in contributions]
+        plt.plot(range(1, len(cumulative_f1) + 1), cumulative_f1, marker='o', color='green')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.xlabel('Number of Attributes')
+        plt.ylabel('Cumulative F1 Score')
+        plt.title('Cumulative Performance')
+        
+        # Save plots
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/comprehensive_analysis.png', 
+                    dpi=300, bbox_inches='tight', pad_inches=0.5)
+        plt.close()
+
     def progressive_evaluation(self, X: pd.DataFrame, y: pd.Series, ranked_attrs: List[str], 
-                             base_classifier=DecisionTreeClassifier(max_depth=8, random_state=42), 
-                             cv=5) -> Dict:
+                         base_classifier=DecisionTreeClassifier(max_depth=8, random_state=42), 
+                         cv=5) -> Dict:
         """Evaluate attribute combinations progressively"""
         results = []
         current_attrs = []
+        
         # Use PyTorch model if on GPU
         if self.device.type == 'cuda' and base_classifier is None:
-            base_classifier = UNetClassifier  # Your PyTorch model class
+            base_classifier = UNetClassifier()  # Instantiate the class
         elif base_classifier is None:
             base_classifier = DecisionTreeClassifier(max_depth=8, random_state=42)
             
@@ -558,12 +580,51 @@ class BaseShapAnalyzer:
         gains = self._calculate_gains(results)
         self._plot_evaluation_results(results, gains)
         
+        
+        # Calculate contributions and plot comprehensive results
+        contributions = self._calculate_attribute_contributions(results)
+        self._plot_comprehensive_results(results, contributions)
+        
         return {
             'results': results,
             'gains': gains,
+            'contributions': contributions,
             'ranked_attrs': ranked_attrs
         }
+
+    def _calculate_gains(self, results: List[Dict]) -> List[float]:
+        """Calculate performance gains between consecutive attribute additions"""
+        gains = []
+        prev_f1 = 0
         
+        for result in results:
+            current_f1 = result['f1_score_mean']
+            gain = current_f1 - prev_f1
+            gains.append(gain)
+            prev_f1 = current_f1
+            
+        return gains
+
+    def _calculate_attribute_contributions(self, results: List[Dict]) -> List[Dict]:
+        """Calculate the contribution of each attribute to the overall performance"""
+        contributions = []
+        prev_f1 = 0
+        
+        for result in results:
+            current_f1 = result['f1_score_mean']
+            marginal_gain = current_f1 - prev_f1
+            
+            contribution = {
+                'attribute': result['attributes'][-1],
+                'marginal_gain': marginal_gain,
+                'cumulative_f1': current_f1
+            }
+            
+            contributions.append(contribution)
+            prev_f1 = current_f1
+            
+        return contributions        
+    
     def _gpu_cross_val_score(self, model_class, X, y, cv):
         """Perform cross-validation on GPU"""
         kf = KFold(n_splits=cv, shuffle=True, random_state=42)
@@ -588,15 +649,6 @@ class BaseShapAnalyzer:
             
         return np.array(scores)
     
-    def _calculate_gains(self, results):
-        """Calculate gain ratios between consecutive attribute combinations"""
-        gains = []
-        for i in range(1, len(results)):
-            prev_score = results[i-1]['f1_score_mean']
-            curr_score = results[i]['f1_score_mean']
-            gain = (curr_score - prev_score) / prev_score
-            gains.append(gain)
-        return gains
 
     def select_optimal_attributes(self, eval_results: Dict, gain_threshold: float = 0.05) -> List[str]:
         """
@@ -881,8 +933,11 @@ class ShapAnalyzer(BaseShapAnalyzer):
         
         print("Calculating SHAP values...")
         shap_values = self.generate_shap_values(model, X_test)
-        
-        print("Calculating feature importance...")
+        # plot init SHAP values
+        n_classes = len(np.unique(y))
+        for i in range(n_classes):
+            self.plot_class_shap_analysis(shap_values, X_test, i)
+        print("Calculating SHAP feature importance...")
         # Calculate feature importance efficiently
         n_classes = len(np.unique(y))
         global_importance_df = self.save_feature_importance(shap_values, X, n_classes)
@@ -943,7 +998,7 @@ class SimpleClassifier(nn.Module):
         return self.network(x)
 
 class TorchShapAnalyzer(BaseShapAnalyzer):
-    def __init__(self, output_dir: str = 'shap_results', attr_name: List[str] = None, batch_size: int = 1000):
+    def __init__(self, output_dir: str = 'torch_shap_results', attr_name: List[str] = None, batch_size: int = 1000):
         super().__init__(output_dir, attr_name)
         self.output_dir = output_dir
         self.attr_name = attr_name
@@ -1113,7 +1168,7 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         )
         
         # Training loop with convergence checking
-        max_epochs = 50
+        max_epochs = 6  
         min_epochs = 5
         patience = 3
         convergence_threshold = 0.001
@@ -1234,7 +1289,7 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         all_shap_values = []
         
         # Create progress bar
-        with tqdm(total=n_batches, desc="Calculating SHAP values", unit="batch") as pbar:
+        with tqdm(total=n_batches, desc="Calculating Torch SHAP values", unit="batch") as pbar:
             for i in range(0, len(X_test), batch_size):
                 # Process batch
                 batch = X_test.iloc[i:i + batch_size].values
@@ -1288,15 +1343,19 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         X, y = prepare_combined_data(df_list, self.attr_name)
         model, X_train, y_train, X_test, y_test = self.train_model(X, y)
         
-        print("Calculating SHAP values...")
+        print("Calculating Torch SHAP values...")
         # Move model to CPU for SHAP calculations
         model = model.cpu()
         shap_values = self.generate_shap_values(model, X_test)
         
+        # plot shap analysis
+        n_classes = len(np.unique(y))
+        for i in range(n_classes):
+            self.plot_class_shap_analysis(shap_values, X_test, i)
         # Move model back to GPU if available
         model = model.to(self.device)
         
-        print("Calculating feature importance...")
+        print("Calculating Torch SHAP feature importance...")
         n_classes = len(np.unique(y))
         global_importance_df = self.save_feature_importance(shap_values, X, n_classes)
         
@@ -1590,7 +1649,6 @@ def preprocess_volumes(volumes: List[np.ndarray], labels: np.ndarray) -> Tuple[L
     
     return processed_volumes, processed_labels
 
-
 def prepare_combined_data(df_list: List[pd.DataFrame], attr_name: List[str]) -> Tuple[pd.DataFrame, pd.Series]:
     """
     Prepare and combine data from multiple DataFrames for evaluation.
@@ -1651,7 +1709,7 @@ def main():
     attr_name = ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc']
     # attr_name = ['seismic', 'freq', 'dip', 'phase']
     # attr_name = ['seismic', 'freq']
-    n_traces = 1000 # 20/s then 50000 causes 41 minutes
+    n_traces = 10 # 20/s then 50000 causes 41 minutes
     seed = 42
     
     # Load and preprocess data
@@ -1685,7 +1743,7 @@ def main():
     #     pairplot = create_visualization(df_list[i], file_name)
     
     # Run complete analysis pipeline
-    
+    print('Running SHAP analysis...')
     analyzer = ShapAnalyzer(
     output_dir='shap_results',
     attr_name=attr_name,
@@ -1693,6 +1751,7 @@ def main():
 )
     shap_results = analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
     
+    print('Running Torch SHAP analysis...')
     torch_analyzer = TorchShapAnalyzer(
         output_dir='torch_shap_results', 
         attr_name=attr_name,
