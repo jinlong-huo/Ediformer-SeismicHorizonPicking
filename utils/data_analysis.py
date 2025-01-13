@@ -4,9 +4,10 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
 from functools import partial
 from multiprocessing import Pool, cpu_count
-from typing import Dict, List, Optional, Tuple, Union, Type
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,15 +26,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-from dataclasses import dataclass
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 import warnings
 from contextlib import contextmanager
 
-from utils.check_cpu_info import get_optimal_cpu_count, monitor_cpu_usage
 from models.UNet import UNetClassifier
+from utils.check_cpu_info import get_optimal_cpu_count, monitor_cpu_usage
 
 """
 
@@ -223,305 +224,204 @@ class BaseShapAnalyzer:
     def create_output_directory(self):
         os.makedirs(self.output_dir, exist_ok=True)
         
-    def _plot_evaluation_results(self, results, gains, tau=0.05):
-        """
-        Plot and save evaluation results separately with improved legend placement.
-        """
-        n_attrs = [r['n_attributes'] for r in results]
-        scores = [r['f1_score_mean'] for r in results]
-        std = [r['f1_score_std'] for r in results]
+    # def _plot_evaluation_results(self, results, gains, tau=0.05):
+    #     """
+    #     Plot and save evaluation results separately with improved legend placement.
+    #     """
+    #     n_attrs = [r['n_attributes'] for r in results]
+    #     scores = [r['f1_score_mean'] for r in results]
+    #     std = [r['f1_score_std'] for r in results]
 
-        # Plot 1: Performance vs Number of Attributes
-        plt.figure(figsize=(10, 6))
-        plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Number of Attributes')
-        plt.ylabel('F1 Score')
-        plt.title('Performance vs Number of Attributes')
+    #     # Plot 1: Performance vs Number of Attributes
+    #     plt.figure(figsize=(10, 6))
+    #     plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Number of Attributes')
+    #     plt.ylabel('F1 Score')
+    #     plt.title('Performance vs Number of Attributes')
         
-        # Adjust layout to prevent cutoff
-        plt.tight_layout()
-        plt.savefig(f'{self.output_dir}/performance_plot.png', 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
+    #     # Adjust layout to prevent cutoff
+    #     plt.tight_layout()
+    #     plt.savefig(f'{self.output_dir}/performance_plot.png', 
+    #                 dpi=300, bbox_inches='tight')
+    #     plt.close()
 
-        # Plot 2: Gain Ratio Visualization
-        plt.figure(figsize=(10, 6))
-        plt.plot(range(1, len(gains)+1), gains, marker='o', color='green')
-        plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Attribute Addition Step')
-        plt.ylabel('Gain Ratio')
-        plt.title('Gain Ratio per Attribute Addition')
+    #     # Plot 2: Gain Ratio Visualization
+    #     plt.figure(figsize=(10, 6))
+    #     plt.plot(range(1, len(gains)+1), gains, marker='o', color='green')
+    #     plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Attribute Addition Step')
+    #     plt.ylabel('Gain Ratio')
+    #     plt.title('Gain Ratio per Attribute Addition')
         
-        # Place legend outside the plot
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    #     # Place legend outside the plot
+    #     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         
-        # Adjust layout to prevent cutoff
-        plt.tight_layout()
-        plt.savefig(f'{self.output_dir}/gain_ratio_plot.png', 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
+    #     # Adjust layout to prevent cutoff
+    #     plt.tight_layout()
+    #     plt.savefig(f'{self.output_dir}/gain_ratio_plot.png', 
+    #                 dpi=300, bbox_inches='tight')
+    #     plt.close()
 
-        # Plot 3: CPU Resource Usage
-        fig, ax1 = plt.subplots(figsize=(10, 6))
-        times = [r['resources']['execution_time'] for r in results]
-        cpu_memory = [r['resources']['cpu_memory_usage'] for r in results]
+    #     self._create_combined_plot(results, gains, tau)
         
-        # Create twin axes
-        ax2 = ax1.twinx()
+    # def _create_combined_plot(self, results, gains, tau=0.05):
+    #     """Create a combined plot of all metrics with proper spacing."""
+    #     plt.figure(figsize=(20, 5))
         
-        # Plot with larger markers for better visibility
-        line1 = ax1.plot(n_attrs, times, marker='o', markersize=8,
-                        color='blue', label='Time (s)')
-        line2 = ax2.plot(n_attrs, cpu_memory, marker='s', markersize=8,
-                        color='red', label='CPU Memory (MB)')
+    #     # Add extra space at right for legends
+    #     plt.subplots_adjust(right=0.85, wspace=0.4)
         
-        ax1.set_xlabel('Number of Attributes')
-        ax1.set_ylabel('Time (seconds)', color='blue')
-        ax2.set_ylabel('CPU Memory (MB)', color='red')
+    #     n_attrs = [r['n_attributes'] for r in results]
         
-        ax1.tick_params(axis='y', labelcolor='blue')
-        ax2.tick_params(axis='y', labelcolor='red')
+    #     # Plot 1: Performance
+    #     plt.subplot(121)
+    #     scores = [r['f1_score_mean'] for r in results]
+    #     std = [r['f1_score_std'] for r in results]
+    #     plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Number of Attributes')
+    #     plt.ylabel('F1 Score')
+    #     plt.title('Performance vs Attributes')
         
-        # Combine legends and place outside
-        lines = line1 + line2
-        labels = [l.get_label() for l in lines]
-        fig.legend(lines, labels, bbox_to_anchor=(1.15, 0.5), loc='center left')
+    #     # Plot 2: Gains
+    #     plt.subplot(122)
+    #     plt.plot(range(1, len(gains)+1), gains, marker='o', color='green')
+    #     plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Attribute Addition Step')
+    #     plt.ylabel('Gain Ratio')
+    #     plt.title('Gain Ratio')
+    #     # Place legend inside with small font
+    #     plt.legend(loc='upper right', fontsize='small')
         
-        plt.title('CPU Resources')
-        plt.grid(True, linestyle='--', alpha=0.7)
         
-        # Adjust layout to accommodate legend
-        plt.tight_layout()
-        plt.savefig(f'{self.output_dir}/cpu_resources_plot.png', 
-                    dpi=300, bbox_inches='tight', pad_inches=0.5)
-        plt.close()
-
-        # Plot 4: GPU Resource Usage (if available)
-        if 'gpu_memory_allocated' in results[0]['resources']:
-            fig, ax3 = plt.subplots(figsize=(10, 6))
-            gpu_allocated = [r['resources']['gpu_memory_allocated'] for r in results]
-            gpu_cached = [r['resources']['gpu_memory_cached'] for r in results]
-            gpu_util = [r['resources']['gpu_utilization'] for r in results]
-            
-            ax4 = ax3.twinx()
-            
-            # Plot with different marker styles and sizes
-            line3 = ax3.plot(n_attrs, gpu_allocated, marker='o', markersize=8,
-                            color='purple', label='GPU Allocated (MB)')
-            line4 = ax3.plot(n_attrs, gpu_cached, marker='s', markersize=8,
-                            color='orange', label='GPU Cached (MB)')
-            line5 = ax4.plot(n_attrs, gpu_util, marker='^', markersize=8,
-                            color='green', label='GPU Util (%)')
-            
-            ax3.set_xlabel('Number of Attributes')
-            ax3.set_ylabel('GPU Memory (MB)', color='purple')
-            ax4.set_ylabel('GPU Utilization (%)', color='green')
-            
-            ax3.tick_params(axis='y', labelcolor='purple')
-            ax4.tick_params(axis='y', labelcolor='green')
-            
-            # Combine legends and place outside
-            lines = line3 + line4 + line5
-            labels = [l.get_label() for l in lines]
-            fig.legend(lines, labels, bbox_to_anchor=(1.15, 0.5), loc='center left')
-            
-            plt.title('GPU Resources')
-            plt.grid(True, linestyle='--', alpha=0.7)
-            
-            # Adjust layout to accommodate legend
-            plt.tight_layout()
-            plt.savefig(f'{self.output_dir}/gpu_resources_plot.png', 
-                        dpi=300, bbox_inches='tight', pad_inches=0.5)
-            plt.close()
-            
-        # Create a combined plot with all metrics (optional)
-        self._create_combined_plot(results, gains, tau)
-        
-    def _create_combined_plot(self, results, gains, tau=0.05):
-        """Create a combined plot of all metrics with proper spacing."""
-        plt.figure(figsize=(20, 5))
-        
-        # Add extra space at right for legends
-        plt.subplots_adjust(right=0.85, wspace=0.4)
-        
-        n_attrs = [r['n_attributes'] for r in results]
-        
-        # Plot 1: Performance
-        plt.subplot(141)
-        scores = [r['f1_score_mean'] for r in results]
-        std = [r['f1_score_std'] for r in results]
-        plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Number of Attributes')
-        plt.ylabel('F1 Score')
-        plt.title('Performance vs Attributes')
-        
-        # Plot 2: Gains
-        plt.subplot(142)
-        plt.plot(range(1, len(gains)+1), gains, marker='o', color='green')
-        plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Attribute Addition Step')
-        plt.ylabel('Gain Ratio')
-        plt.title('Gain Ratio')
-        # Place legend inside with small font
-        plt.legend(loc='upper right', fontsize='small')
-        
-        # Plot 3: CPU Resources
-        ax1 = plt.subplot(143)
-        ax2 = ax1.twinx()
-        
-        times = [r['resources']['execution_time'] for r in results]
-        cpu_memory = [r['resources']['cpu_memory_usage'] for r in results]
-        
-        line1 = ax1.plot(n_attrs, times, marker='o', color='blue', label='Time (s)')
-        line2 = ax2.plot(n_attrs, cpu_memory, marker='s', color='red', label='CPU Memory (MB)')
-        
-        ax1.set_xlabel('Number of Attributes')
-        ax1.set_ylabel('Time (seconds)', color='blue')
-        ax2.set_ylabel('CPU Memory (MB)', color='red')
-        ax1.tick_params(axis='y', labelcolor='blue')
-        ax2.tick_params(axis='y', labelcolor='red')
-        
-        # Place legend outside all plots
-        lines = line1 + line2
-        labels = [l.get_label() for l in lines]
-        plt.legend(lines, labels, bbox_to_anchor=(1.6, 0.5), loc='center right')
-        plt.title('CPU Resources')
-        
-        # Plot 4: GPU Resources
-        ax3 = plt.subplot(144)
-        if 'gpu_memory_allocated' in results[0]['resources']:
-            ax4 = ax3.twinx()
-            
-            gpu_allocated = [r['resources']['gpu_memory_allocated'] for r in results]
-            gpu_cached = [r['resources']['gpu_memory_cached'] for r in results]
-            gpu_util = [r['resources']['gpu_utilization'] for r in results]
-            
-            line3 = ax3.plot(n_attrs, gpu_allocated, marker='o', color='purple', 
-                            label='GPU Allocated')
-            line4 = ax3.plot(n_attrs, gpu_cached, marker='s', color='orange', 
-                            label='GPU Cached')
-            line5 = ax4.plot(n_attrs, gpu_util, marker='^', color='green', 
-                            label='GPU Util (%)')
-            
-            ax3.set_xlabel('Number of Attributes')
-            ax3.set_ylabel('GPU Memory (MB)', color='purple')
-            ax4.set_ylabel('GPU Utilization (%)', color='green')
-            
-            ax3.tick_params(axis='y', labelcolor='purple')
-            ax4.tick_params(axis='y', labelcolor='green')
-            
-            # Place legend outside all plots
-            lines = line3 + line4 + line5
-            labels = [l.get_label() for l in lines]
-            plt.legend(lines, labels, bbox_to_anchor=(1.6, 0.5), loc='center right')
-            plt.title('GPU Resources')
-        else:
-            plt.text(0.5, 0.5, 'GPU Metrics\nNot Available', 
-                    horizontalalignment='center', verticalalignment='center',
-                    transform=ax3.transAxes)
-            plt.title('GPU Resources (N/A)')
-        
-        plt.savefig(f'{self.output_dir}/combined_evaluation_results.png', 
-                    dpi=300, bbox_inches='tight', pad_inches=0.5)
-        plt.close()
+    #     plt.savefig(f'{self.output_dir}/combined_evaluation_results.png', 
+    #                 dpi=300, bbox_inches='tight', pad_inches=0.5)
+    #     plt.close()
     
-
-    # def _calculate_attribute_contributions(self, results: List[Dict]) -> List[AttributeContribution]:
-    #     """Calculate the contribution of each attribute to the overall performance"""
-    #     contributions = []
-    #     prev_f1 = 0
+    def _plot_comprehensive_results(self, results: List[Dict], contributions: List[Dict], gains: List[float], tau: float = 0.05):
+        """
+        Create a comprehensive visualization with four subplots:
+        1. Performance vs Attributes
+        2. Gain Ratio
+        3. Marginal Gain per Attribute
+        4. Cumulative Performance
         
-    #     # Calculate absolute gains for normalization
-    #     gains = [r['f1_score_mean'] - prev_f1 for r in results]
-    #     total_absolute_gain = sum(abs(gain) for gain in gains)
+        Args:
+            results: List of evaluation results
+            contributions: List of attribute contributions
+            gains: List of gain ratios
+            tau: Threshold value for gain ratio
+        """
+        # Set up the figure with a 2x2 grid
+        fig = plt.figure(figsize=(20, 15))
+        gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
         
-    #     for i, result in enumerate(results):
-    #         current_f1 = result['f1_score_mean']
-    #         marginal_gain = current_f1 - prev_f1
-            
-    #         # Calculate relative importance using absolute values
-    #         relative_importance = (abs(marginal_gain) / total_absolute_gain * 100) if total_absolute_gain > 0 else 0
-            
-    #         contribution = AttributeContribution(
-    #             attribute=result['attributes'][-1],  # Get the newly added attribute
-    #             marginal_gain=marginal_gain,
-    #             cumulative_f1=current_f1,
-    #             relative_importance=relative_importance
-    #         )
-    #         contributions.append(contribution)
-    #         prev_f1 = current_f1
-            
-    #     return contributions
-
-    def _plot_comprehensive_results(self, results: List[Dict], contributions: List[Dict], tau=0.05):
-        """Create comprehensive visualization including attribute contributions"""
-        # Create figure with subplots
-        plt.figure(figsize=(20, 10))
-        plt.subplots_adjust(right=0.85, wspace=0.4)
-        
+        # Extract common data
         n_attrs = [r['n_attributes'] for r in results]
         attrs = [c['attribute'] for c in contributions]
         
-        # Plot 1: Performance with error bars
-        plt.subplot(221)
+        # Plot 1: Performance vs Number of Attributes (top-left)
+        ax1 = fig.add_subplot(gs[0, 0])
         scores = [r['f1_score_mean'] for r in results]
         std = [r['f1_score_std'] for r in results]
-        plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Number of Attributes')
-        plt.ylabel('F1 Score')
-        plt.title('Performance vs Number of Attributes')
+        ax1.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        ax1.set_xlabel('Number of Attributes')
+        ax1.set_ylabel('F1 Score')
+        ax1.set_title('Performance vs Number of Attributes')
         
-        # Plot 2: Marginal Gains
-        plt.subplot(222)
-        gains = [c['marginal_gain'] for c in contributions]
-        plt.bar(attrs, gains, color=['g' if g >= 0 else 'r' for g in gains])
-        plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Attributes')
-        plt.ylabel('Marginal Gain')
-        plt.title('Marginal Gain per Attribute')
-        plt.xticks(rotation=45, ha='right')
-        plt.legend()
+        # Plot 2: Gain Ratio (top-right)
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.plot(range(1, len(gains)+1), gains, marker='o', color='green')
+        ax2.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        ax2.set_xlabel('Attribute Addition Step')
+        ax2.set_ylabel('Gain Ratio')
+        ax2.set_title('Gain Ratio per Attribute Addition')
+        ax2.legend()
         
-        # Plot 3: Resource Usage
-        ax3 = plt.subplot(223)
-        times = [r['resources']['execution_time'] for r in results]
-        memory = [r['resources']['cpu_memory_usage'] for r in results]
+        # Plot 3: Marginal Gains (bottom-left)
+        ax3 = fig.add_subplot(gs[1, 0])
+        marginal_gains = [c['marginal_gain'] for c in contributions]
+        bars = ax3.bar(attrs, marginal_gains)
+        # Color bars based on gain value
+        for bar, gain in zip(bars, marginal_gains):
+            bar.set_color('g' if gain >= tau else 'r')
+        ax3.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+        ax3.grid(True, linestyle='--', alpha=0.7)
+        ax3.set_xlabel('Attributes')
+        ax3.set_ylabel('Marginal Gain')
+        ax3.set_title('Marginal Gain per Attribute')
+        # Rotate attribute names for better readability
+        ax3.tick_params(axis='x', rotation=45, labelsize=8)
+        ax3.legend()
         
-        ax4 = ax3.twinx()
-        line1 = ax3.plot(n_attrs, times, marker='o', color='blue', label='Time (s)')
-        line2 = ax4.plot(n_attrs, memory, marker='s', color='red', label='Memory (MB)')
-        
-        ax3.set_xlabel('Number of Attributes')
-        ax3.set_ylabel('Time (seconds)', color='blue')
-        ax4.set_ylabel('Memory (MB)', color='red')
-        ax3.tick_params(axis='y', labelcolor='blue')
-        ax4.tick_params(axis='y', labelcolor='red')
-        
-        lines = line1 + line2
-        labels = [l.get_label() for l in lines]
-        ax3.legend(lines, labels, loc='upper left')
-        plt.title('Resource Usage')
-        
-        # Plot 4: Cumulative Performance
-        plt.subplot(224)
+        # Plot 4: Cumulative Performance (bottom-right)
+        ax4 = fig.add_subplot(gs[1, 1])
         cumulative_f1 = [c['cumulative_f1'] for c in contributions]
-        plt.plot(range(1, len(cumulative_f1) + 1), cumulative_f1, marker='o', color='green')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.xlabel('Number of Attributes')
-        plt.ylabel('Cumulative F1 Score')
-        plt.title('Cumulative Performance')
+        ax4.plot(range(1, len(cumulative_f1) + 1), cumulative_f1, marker='o', color='purple')
+        # Add attribute names at each point
+        for i, (f1, attr) in enumerate(zip(cumulative_f1, attrs)):
+            ax4.annotate(attr, (i + 1, f1), textcoords="offset points", 
+                        xytext=(0,10), ha='center', fontsize=8)
+        ax4.grid(True, linestyle='--', alpha=0.7)
+        ax4.set_xlabel('Number of Attributes')
+        ax4.set_ylabel('Cumulative F1 Score')
+        ax4.set_title('Cumulative Performance')
         
-        # Save plots
-        plt.tight_layout()
+        # Adjust layout and save
         plt.savefig(f'{self.output_dir}/comprehensive_analysis.png', 
                     dpi=300, bbox_inches='tight', pad_inches=0.5)
         plt.close()
+        
+    # def _plot_comprehensive_results(self, results: List[Dict], contributions: List[Dict], tau=0.05):
+    #     """Create comprehensive visualization including attribute contributions"""
+    #     # Create figure with subplots
+    #     plt.figure(figsize=(20, 10))
+    #     plt.subplots_adjust(right=0.85, wspace=0.4)
+        
+    #     n_attrs = [r['n_attributes'] for r in results]
+    #     attrs = [c['attribute'] for c in contributions]
+        
+    #     # Plot 1: Performance with error bars
+    #     plt.subplot(131)
+    #     scores = [r['f1_score_mean'] for r in results]
+    #     std = [r['f1_score_std'] for r in results]
+    #     plt.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Number of Attributes')
+    #     plt.ylabel('F1 Score')
+    #     plt.title('Performance vs Number of Attributes')
+        
+    #     # Plot 2: Marginal Gains
+    #     plt.subplot(132)
+    #     gains = [c['marginal_gain'] for c in contributions]
+    #     plt.bar(attrs, gains, color=['g' if g >= 0 else 'r' for g in gains])
+    #     plt.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Attributes')
+    #     plt.ylabel('Marginal Gain')
+    #     plt.title('Marginal Gain per Attribute')
+    #     plt.xticks(rotation=45, ha='right')
+    #     plt.legend()
+      
+    #     # Plot 4: Cumulative Performance
+    #     plt.subplot(133)
+    #     cumulative_f1 = [c['cumulative_f1'] for c in contributions]
+    #     plt.plot(range(1, len(cumulative_f1) + 1), cumulative_f1, marker='o', color='green')
+    #     plt.grid(True, linestyle='--', alpha=0.7)
+    #     plt.xlabel('Number of Attributes')
+    #     plt.ylabel('Cumulative F1 Score')
+    #     plt.title('Cumulative Performance')
+        
+    #     # Save plots
+    #     plt.tight_layout()
+    #     plt.savefig(f'{self.output_dir}/comprehensive_analysis.png', 
+    #                 dpi=300, bbox_inches='tight', pad_inches=0.5)
+    #     plt.close()
 
     def progressive_evaluation(self, X: pd.DataFrame, y: pd.Series, ranked_attrs: List[str], 
                          base_classifier=DecisionTreeClassifier(max_depth=8, random_state=42), 
@@ -578,12 +478,11 @@ class BaseShapAnalyzer:
                 self.monitor.clear_gpu_memory()
         
         gains = self._calculate_gains(results)
-        self._plot_evaluation_results(results, gains)
-        
+        # self._plot_evaluation_results(results, gains)
         
         # Calculate contributions and plot comprehensive results
         contributions = self._calculate_attribute_contributions(results)
-        self._plot_comprehensive_results(results, contributions)
+        self._plot_comprehensive_results(results, contributions, gains)
         
         return {
             'results': results,
@@ -700,10 +599,10 @@ class BaseShapAnalyzer:
                 print(f"F1 Score: {result['f1_score_mean']:.3f} ± {result['f1_score_std']:.3f}")
                 
                 resources = result['resources']
-                print("\nComputation Resources:")
-                print("-" * 40)
-                print(f"Time: {resources['execution_time']:.2f}s")
-                print(f"CPU Memory: {resources['cpu_memory_usage']:.2f}MB")
+                # print("\nComputation Resources:")
+                # print("-" * 40)
+                # print(f"Time: {resources['execution_time']:.2f}s")
+                # print(f"CPU Memory: {resources['cpu_memory_usage']:.2f}MB")
                 
                 # Print GPU metrics if available
                 if self.device.type == 'cuda':
@@ -712,7 +611,7 @@ class BaseShapAnalyzer:
                     print(f"Allocated Memory: {resources['gpu_memory_allocated']:.2f}MB")
                     print(f"Cached Memory: {resources['gpu_memory_cached']:.2f}MB")
                     print(f"GPU Utilization: {resources['gpu_utilization']:.1f}%")
-                    print(f"Total GPU Memory: {resources['gpu_total_memory']:.2f}MB")
+                    print(f"Total GPU Memory: {resources['gpu_total_memory']:.2f}MB\n")
                 break
     
         return selected_attrs, eval_results
@@ -763,7 +662,6 @@ class ShapAnalyzer(BaseShapAnalyzer):
             selected_columns.append('label')
             
         return selected_columns
-    
     
     def plot_class_shap_analysis(self, shap_values: List[np.ndarray], X_test: pd.DataFrame, class_idx: int):
         """Generate and save SHAP plots for a specific class."""
@@ -878,12 +776,12 @@ class ShapAnalyzer(BaseShapAnalyzer):
         
         
         # Calculate number of batches
-        n_batches = len(X_test) // self.batch_size + (1 if len(X_test) % self.batch_size != 0 else 0)
+        # n_batches = len(X_test) // self.batch_size + (1 if len(X_test) % self.batch_size != 0 else 0)
         
         all_shap_values = []
         
         # Create progress bar
-        pbar = tqdm(total=n_batches, desc="Calculating SHAP values", unit="batch")
+        # pbar = tqdm(total=n_batches, desc="Calculating SHAP values", unit="batch")
         
         # Use ProcessPoolExecutor for parallel processing
         n_jobs = os.cpu_count() - 1  # Leave one CPU core free
@@ -899,9 +797,9 @@ class ShapAnalyzer(BaseShapAnalyzer):
             for future in as_completed(future_to_batch):
                 batch_shap = future.result()
                 all_shap_values.append((future_to_batch[future], batch_shap))
-                pbar.update(1)
+                # pbar.update(1)
         
-        pbar.close()
+        # pbar.close()
         
         # Sort results by batch index
         all_shap_values.sort(key=lambda x: x[0])
@@ -931,13 +829,13 @@ class ShapAnalyzer(BaseShapAnalyzer):
         
         model, X_train, y_train, X_test, y_test = self.train_model(X, y)
         
-        print("Calculating SHAP values...")
+        print("Calculating Init SHAP values...")
         shap_values = self.generate_shap_values(model, X_test)
         # plot init SHAP values
         n_classes = len(np.unique(y))
         for i in range(n_classes):
             self.plot_class_shap_analysis(shap_values, X_test, i)
-        print("Calculating SHAP feature importance...")
+        print("\nCalculating SHAP feature importance...")
         # Calculate feature importance efficiently
         n_classes = len(np.unique(y))
         global_importance_df = self.save_feature_importance(shap_values, X, n_classes)
@@ -956,8 +854,9 @@ class ShapAnalyzer(BaseShapAnalyzer):
         # Final analysis with optimized features
         X_opt, y_opt = prepare_combined_data(optimized_df_list, selected_attrs)
         model_opt, X_train_opt, y_train_opt, X_test_opt, y_test_opt = self.train_model(X_opt, y_opt)
+        print('Calculating Optimized SHAP values for optimized model...')
         shap_values_opt = self.generate_shap_values(model_opt, X_test_opt)
-        
+        print('\n SHAP values analysis done')
         return {
             'initial_results': {
                 'model': model,
@@ -1129,7 +1028,7 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         # Split data with validation set
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Convert to PyTorch tensors (keep on CPU initially)
+        # Convert to PyTorch tensors
         X_train_tensor = torch.FloatTensor(X_train.values)
         y_train_tensor = torch.LongTensor(y_train.values)
         
@@ -1139,69 +1038,48 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         num_classes = len(np.unique(y))
         
         model = UNetClassifier(input_dim, hidden_dim, num_classes).to(self.device)
+        model.apply(lambda m: nn.init.xavier_uniform_(m.weight) if isinstance(m, nn.Linear) else None)
         
-        # Initialize weights
-        def init_weights(m):
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                nn.init.zeros_(m.bias)
-        model.apply(init_weights)
-        
-        # Training parameters with automatic mixed precision
+        # Training setup
         scaler = torch.cuda.amp.GradScaler()
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(
-            model.parameters(),
-            lr=0.001,
-            weight_decay=0.01
-        )
+        optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
         
-        # Create DataLoader with tensors on CPU
-        train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+        # Create DataLoader
         train_loader = DataLoader(
-            train_dataset,
+            TensorDataset(X_train_tensor, y_train_tensor),
             batch_size=min(64, len(X_train) // 10),
             shuffle=True,
-            pin_memory=True,  # This helps transfer to GPU
+            pin_memory=True,
             num_workers=2,
             persistent_workers=True
         )
         
-        # Training loop with convergence checking
-        max_epochs = 6  
+        # Training configuration
+        max_epochs = 6
         min_epochs = 5
         patience = 3
         convergence_threshold = 0.001
-        
         best_loss = float('inf')
         best_model = None
         patience_counter = 0
         previous_loss = float('inf')
         
-        # Main epoch progress bar
-        epoch_pbar = tqdm(range(max_epochs), desc='Training Progress', position=0)
-        
-        for epoch in epoch_pbar:
+        for epoch in range(max_epochs):
             model.train()
-            epoch_loss = 0
-            correct = 0
-            total = 0
+            running_loss = 0.0
+            running_correct = 0
+            running_total = 0
             
-            # Batch progress bar
-            batch_pbar = tqdm(train_loader, desc=f'Epoch {epoch + 1}/{max_epochs}', 
-                            leave=False, position=1)
-            
-            for batch_X, batch_y in batch_pbar:
-                # Move batch to GPU
-                batch_X = batch_X.to(self.device)
-                batch_y = batch_y.to(self.device)
+            for batch_X, batch_y in train_loader:
+                # Move batch to GPU and train
+                batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
                 
-                # Mixed precision training
                 with torch.cuda.amp.autocast():
                     outputs = model(batch_X)
                     loss = criterion(outputs, batch_y)
                 
-                # Backward pass with gradient scaling
+                # Optimization step
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -1209,56 +1087,43 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
                 
-                # Calculate accuracy
+                # Update metrics
+                running_loss += loss.item()
                 _, predicted = outputs.max(1)
-                total += batch_y.size(0)
-                correct += predicted.eq(batch_y).sum().item()
-                
-                epoch_loss += loss.item()
-                batch_pbar.set_postfix({
-                    'batch_loss': f'{loss.item():.4f}',
-                    'acc': f'{100.0 * correct / total:.1f}%'
-                })
+                running_total += batch_y.size(0)
+                running_correct += predicted.eq(batch_y).sum().item()
             
-            avg_loss = epoch_loss / len(train_loader)
-            accuracy = 100.0 * correct / total
+            # Epoch-end processing
+            avg_epoch_loss = running_loss / len(train_loader)
+            # accuracy = 100.0 * running_correct / running_total
             
-            # Save best model
-            if avg_loss < best_loss:
-                best_loss = avg_loss
+            # Model checkpointing
+            if avg_epoch_loss < best_loss:
+                best_loss = avg_epoch_loss
                 best_model = model.state_dict().copy()
                 patience_counter = 0
             else:
                 patience_counter += 1
             
-            # Update progress bar
-            epoch_pbar.set_postfix({
-                'avg_loss': f'{avg_loss:.4f}',
-                'accuracy': f'{accuracy:.1f}%'
-            })
+            # Convergence checking
+            loss_improvement = (previous_loss - avg_epoch_loss) / previous_loss if previous_loss != float('inf') else float('inf')
+            previous_loss = avg_epoch_loss
             
-            # Check convergence
-            loss_improvement = (previous_loss - avg_loss) / previous_loss
-            previous_loss = avg_loss
-            
-            # Early stopping conditions
+            # Early stopping checks
             if epoch >= min_epochs:
                 if patience_counter >= patience:
-                    print(f"\nEarly stopping triggered after {epoch + 1} epochs")
+                    # print(f"Early stopping triggered after {epoch + 1} epochs")
                     break
                 if loss_improvement < convergence_threshold:
-                    print(f"\nConverged after {epoch + 1} epochs")
+                    # print(f"Converged after {epoch + 1} epochs")
                     break
-            
-            batch_pbar.close()
-        
-        epoch_pbar.close()
         
         # Load best model
         if best_model is not None:
             model.load_state_dict(best_model)
         
         return model, X_train, y_train, X_test, y_test
+    
     @staticmethod
     def _process_batch(batch_data, model):
         """Static method to process a single batch"""
@@ -1284,30 +1149,27 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         
         # Calculate batch size
         batch_size = min(100, len(X_test))  # Adjust based on available memory
-        n_batches = len(X_test) // batch_size + (1 if len(X_test) % batch_size != 0 else 0)
         
         all_shap_values = []
         
         # Create progress bar
-        with tqdm(total=n_batches, desc="Calculating Torch SHAP values", unit="batch") as pbar:
-            for i in range(0, len(X_test), batch_size):
-                # Process batch
-                batch = X_test.iloc[i:i + batch_size].values
-                batch_shap = explainer.shap_values(batch)
-                
-                # Store results
-                if isinstance(batch_shap, list):
-                    # Multi-class case
-                    if not all_shap_values:
-                        all_shap_values = [[] for _ in range(len(batch_shap))]
-                    for j, class_shap in enumerate(batch_shap):
-                        all_shap_values[j].append(class_shap)
-                else:
-                    # Binary classification case
-                    all_shap_values.append(batch_shap)
-                
-                pbar.update(1)
-        
+    
+        for i in range(0, len(X_test), batch_size):
+            # Process batch
+            batch = X_test.iloc[i:i + batch_size].values
+            batch_shap = explainer.shap_values(batch)
+            
+            # Store results
+            if isinstance(batch_shap, list):
+                # Multi-class case
+                if not all_shap_values:
+                    all_shap_values = [[] for _ in range(len(batch_shap))]
+                for j, class_shap in enumerate(batch_shap):
+                    all_shap_values[j].append(class_shap)
+            else:
+                # Binary classification case
+                all_shap_values.append(batch_shap)
+            
         # Combine results
         if isinstance(all_shap_values[0], list):
             # Multi-class case
@@ -1341,10 +1203,9 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         """Run complete SHAP analysis pipeline with CUDA safety measures"""
         # Initial setup and model training
         X, y = prepare_combined_data(df_list, self.attr_name)
+       
         model, X_train, y_train, X_test, y_test = self.train_model(X, y)
-        
-        print("Calculating Torch SHAP values...")
-        # Move model to CPU for SHAP calculations
+        print("Calculating Init Torch SHAP values...")
         model = model.cpu()
         shap_values = self.generate_shap_values(model, X_test)
         
@@ -1355,14 +1216,12 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         # Move model back to GPU if available
         model = model.to(self.device)
         
-        print("Calculating Torch SHAP feature importance...")
+        print("\nCalculating Init Torch SHAP feature importance...")
         n_classes = len(np.unique(y))
         global_importance_df = self.save_feature_importance(shap_values, X, n_classes)
-        
-        # Optimize feature set
         ranked_attrs = global_importance_df['feature'].tolist()
-        selected_attrs, eval_results = self.optimize_feature_set(X, y, ranked_attrs, gain_threshold)
         
+        selected_attrs, eval_results = self.optimize_feature_set(X, y, ranked_attrs, gain_threshold)
         # Create optimized dataset
         optimized_df_list = []
         for df in df_list:
@@ -1376,7 +1235,9 @@ class TorchShapAnalyzer(BaseShapAnalyzer):
         
         # Move model to CPU for final SHAP calculations
         model_opt = model_opt.cpu()
+        print('Calculating Optimized Torch SHAP values for optimized model...')
         shap_values_opt = self.generate_shap_values(model_opt, X_test_opt)
+        print('\nTorch SHAP values analysis done')
         
         return {
             'initial_results': {
@@ -1404,7 +1265,7 @@ def plot_facies_distribution(filepath):
     # Total number of samples
     total_samples = facies_volume.size
 
-    # Calculate percentages
+    # Calculate percentagesf
     percentages = (counts / total_samples) * 100
 
     # Create a bar plot of the distribution
@@ -1539,50 +1400,58 @@ def process_single_trace(args):
 @monitor_cpu_usage
 def prepare_trace_data_parallel(traces_volume, labels, positions, attr_name, normalize=True, n_jobs=None):
     """
-    Prepare data for each trace position with parallel processing and progress bar
+    Prepare data for each trace position with parallel processing.
+    
+    Args:
+        traces_volume: Input traces data
+        labels: Classification labels
+        positions: List of trace positions
+        attr_name: List of attribute names
+        normalize: Whether to normalize the data
+        n_jobs: Number of CPU cores to use (None for optimal)
+    
+    Returns:
+        tuple: (list of DataFrames, scalers) if normalize=True, else list of DataFrames
     """
     if n_jobs is None:
         n_jobs = get_optimal_cpu_count()
     
-    print(f"\nUsing {n_jobs} CPU cores for processing")
-        
-    # Initialize and fit scalers if normalization is enabled
+    # Initialize progress tracking
+    # total_steps = len(positions)
+    # progress = tqdm(total=total_steps, desc="Preparing trace data", unit="trace")
+    
+        # Fit scalers if normalization is enabled
     scalers = None
     if normalize:
-        print("Fitting scalers...")
-        scalers = {}
-        for j, attr in enumerate(attr_name):
-            scaler = StandardScaler()
-            all_traces = traces_volume[j].reshape(-1, 1)
-            scaler.fit(all_traces)
-            scalers[attr] = scaler
+        # progress.write("Fitting scalers...")
+        scalers = {
+            attr: StandardScaler().fit(traces_volume[j].reshape(-1, 1))
+            for j, attr in enumerate(attr_name)
+        }
     
-    # Prepare arguments for parallel processing
-    # print("Preparing parallel processing arguments...")
+    # Prepare and process traces in parallel
     process_args = [
         (i, il, xl, traces_volume, scalers, attr_name)
         for i, (il, xl) in enumerate(positions)
     ]
-    total_traces = len(process_args)
     
-    # print(f"\nProcessing {total_traces} traces in parallel...")
-    # Process traces in parallel with progress bar
     with Pool(n_jobs) as pool:
-        df_list = list(tqdm(
-            pool.imap(process_single_trace, process_args),
-            total=total_traces,
-            desc="Processing traces",
-            unit="trace"
-        ))
+        # Process traces and update progress
+        df_list = []
+        for df in pool.imap(process_single_trace, process_args):
+            df_list.append(df)
+            # progress.update()
     
-    # print("\nAdding labels to DataFrames...")
-    # Add labels to each DataFrame with progress bar
-    for i, df in tqdm(enumerate(df_list), total=len(df_list), desc="Adding labels"):
+    # Add labels to DataFrames (in-place)
+    # progress.set_description("Adding labels")
+    for i, df in enumerate(df_list):
         df['label'] = labels[:, i]
+        # progress.update(0)  # Refresh display without incrementing
     
-    if normalize:
-        return df_list, scalers
-    return df_list   
+    return (df_list, scalers) if normalize else df_list
+        
+    # finally:
+    #     progress.close()
 
 def load_seismic_data(data_dir: str) -> Tuple[List[np.ndarray], np.ndarray]:
     """
@@ -1705,11 +1574,11 @@ def main():
     np.random.seed(42)
     
     # Configuration
-    data_dir = '/home/dell/disk1/Jinlong/Horizontal-data'
+    data_dir = '/home/dell/disk1/Jinlong/Horizontal-data' 
     attr_name = ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc']
     # attr_name = ['seismic', 'freq', 'dip', 'phase']
     # attr_name = ['seismic', 'freq']
-    n_traces = 10 # 20/s then 50000 causes 41 minutes
+    n_traces = 100 # 20/s then 50000 causes 41 minutes
     seed = 42
     
     # Load and preprocess data
@@ -1735,7 +1604,7 @@ def main():
     normalize=True,
     n_jobs=n_jobs
     )
-    print('Data preparation done!')
+    print('Data preparation done!\n')
  
     # Create pairplot
     # for i, (il, xl) in enumerate(positions):
@@ -1751,7 +1620,8 @@ def main():
 )
     shap_results = analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
     
-    print('Running Torch SHAP analysis...')
+    print('Running Torch SHAP analysis...\n')
+    
     torch_analyzer = TorchShapAnalyzer(
         output_dir='torch_shap_results', 
         attr_name=attr_name,
@@ -1760,6 +1630,7 @@ def main():
     torch_shap_results = torch_analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
     
     return shap_results, torch_shap_results
+    
 
 
 if __name__ == "__main__":
