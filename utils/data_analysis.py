@@ -2,18 +2,20 @@ import os
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import Pool
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
-from sklearn.ensemble import RandomForestClassifier
+from sklearn import clone
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.feature_selection import SelectPercentile, f_classif
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.base import BaseEstimator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -94,82 +96,6 @@ class ShapAnalyzer:
             plt.savefig(f'{self.output_dir}/decision_plot_class_{class_idx}.png')
             plt.close()
     
-    def _plot_comprehensive_results(self, results: List[Dict], contributions: List[Dict], gains: List[float], tau: float = 0.05):
-#         """
-#         Create a comprehensive visualization with four subplots:
-#         1. Performance vs Attributes
-#         2. Gain Ratio
-#         3. Marginal Gain per Attribute
-#         4. Cumulative Performance
-        
-#         Args:
-#             results: List of evaluation results
-#             contributions: List of attribute contributions
-#             gains: List of gain ratios
-#             tau: Threshold value for gain ratio
-#         """
-        # Set up the figure with a 2x2 grid
-        fig = plt.figure(figsize=(20, 15))
-        gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
-        
-        # Extract common data
-        n_attrs = [r['n_attributes'] for r in results]
-        attrs = [c['attribute'] for c in contributions]
-        
-        # Plot 1: Performance vs Number of Attributes (top-left)
-        ax1 = fig.add_subplot(gs[0, 0])
-        scores = [r['f1_score_mean'] for r in results]
-        std = [r['f1_score_std'] for r in results]
-        ax1.errorbar(n_attrs, scores, yerr=std, marker='o', color='blue', capsize=5)
-        ax1.grid(True, linestyle='--', alpha=0.7)
-        ax1.set_xlabel('Number of Attributes')
-        ax1.set_ylabel('F1 Score')
-        ax1.set_title('Performance vs Number of Attributes')
-        
-        # Plot 2: Gain Ratio (top-right)
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax2.plot(range(1, len(gains)+1), gains, marker='o', color='green')
-        ax2.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
-        ax2.grid(True, linestyle='--', alpha=0.7)
-        ax2.set_xlabel('Attribute Addition Step')
-        ax2.set_ylabel('Gain Ratio')
-        ax2.set_title('Gain Ratio per Attribute Addition')
-        ax2.legend()
-        
-        # Plot 3: Marginal Gains (bottom-left)
-        ax3 = fig.add_subplot(gs[1, 0])
-        marginal_gains = [c['marginal_gain'] for c in contributions]
-        bars = ax3.bar(attrs, marginal_gains)
-        # Color bars based on gain value
-        for bar, gain in zip(bars, marginal_gains):
-            bar.set_color('g' if gain >= tau else 'r')
-        ax3.axhline(y=tau, color='r', linestyle='--', label=f'Threshold ({tau})')
-        ax3.grid(True, linestyle='--', alpha=0.7)
-        ax3.set_xlabel('Attributes')
-        ax3.set_ylabel('Marginal Gain')
-        ax3.set_title('Marginal Gain per Attribute')
-        # Rotate attribute names for better readability
-        ax3.tick_params(axis='x', rotation=45, labelsize=8)
-        ax3.legend()
-        
-        # Plot 4: Cumulative Performance (bottom-right)
-        ax4 = fig.add_subplot(gs[1, 1])
-        cumulative_f1 = [c['cumulative_f1'] for c in contributions]
-        ax4.plot(range(1, len(cumulative_f1) + 1), cumulative_f1, marker='o', color='purple')
-        # Add attribute names at each point
-        for i, (f1, attr) in enumerate(zip(cumulative_f1, attrs)):
-            ax4.annotate(attr, (i + 1, f1), textcoords="offset points", 
-                        xytext=(0,10), ha='center', fontsize=8)
-        ax4.grid(True, linestyle='--', alpha=0.7)
-        ax4.set_xlabel('Number of Attributes')
-        ax4.set_ylabel('Cumulative F1 Score')
-        ax4.set_title('Cumulative Performance')
-        
-        # Adjust layout and save
-        plt.savefig(f'{self.output_dir}/comprehensive_analysis.png', 
-                    dpi=300, bbox_inches='tight', pad_inches=0.5)
-        plt.close()
-    
     def save_feature_importance(self, shap_values: List[np.ndarray], X: pd.DataFrame, n_classes):
         """Save feature importance analysis to CSV files."""
         
@@ -194,18 +120,29 @@ class ShapAnalyzer:
         
         return global_importance_df
            
-    def train_model(self, X: pd.DataFrame, y: pd.Series) -> Tuple[RandomForestClassifier, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-        """Train Random Forest model with optimized parameters"""
+    def train_model(self, X: pd.DataFrame, y: pd.Series, model=None) -> Tuple[BaseEstimator, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """Train model with optimized parameters
+        
+        Args:
+            X: Feature DataFrame
+            y: Target Series
+            model: Pre-configured model instance (if None, uses default RandomForest)
+        """
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=20,
-            min_samples_leaf=10,
-            max_features='sqrt',
-            n_jobs=-1,
-            random_state=42
-        )
+        if model is None:
+            # Default model if none provided
+            model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=20,
+                min_samples_leaf=10,
+                max_features='sqrt',
+                n_jobs=-1,
+                random_state=42
+            )
+        
+        # Create a copy of the model to avoid modifying the original
+        model = clone(model)
         model.fit(X_train, y_train)
         return model, X_train, y_train, X_test, y_test
 
@@ -268,7 +205,7 @@ class ShapAnalyzer:
             
         gains = self._calculate_gains(results)
         contributions = self._calculate_attribute_contributions(results)
-        self._plot_comprehensive_results(results, contributions, gains)
+        # self._plot_comprehensive_results(results, contributions, gains)
         
         return {
             'results': results,
@@ -313,8 +250,14 @@ class ShapAnalyzer:
                 return eval_results['ranked_attrs'][:i+1]
         return eval_results['ranked_attrs']
 
-    def run_complete_analysis(self, df_list: List[pd.DataFrame], gain_threshold: float = 0.05) -> Dict:
-        """Run complete SHAP analysis pipeline"""
+    def run_complete_analysis(self, df_list: List[pd.DataFrame], model=None, gain_threshold: float = 0.05) -> Dict:
+        """Run complete SHAP analysis pipeline
+        
+        Args:
+            df_list: List of DataFrames containing the data
+            model: Model instance to use for analysis
+            gain_threshold: Threshold for feature selection
+        """
         X, y = prepare_combined_data(df_list, self.attr_name)
         
         # Optional dimensionality reduction for large feature sets
@@ -323,15 +266,16 @@ class ShapAnalyzer:
             X = pd.DataFrame(selector.fit_transform(X, y), columns=X.columns[selector.get_support()])
         
         # Initial model and SHAP analysis
-        model, _, _, X_test, _ = self.train_model(X, y)
+        model, _, _, X_test, _ = self.train_model(X, y, model)
         shap_values = self.generate_shap_values(model, X_test)
         
         # Plot SHAP analysis for each class
         n_classes = len(np.unique(y))
         for i in range(n_classes):
             self.plot_class_shap_analysis(shap_values, X_test, i)
-        
+            
         # Calculate feature importance and optimize feature set
+        n_classes = len(np.unique(y))
         global_importance_df = self.save_feature_importance(shap_values, X, n_classes)
         selected_attrs, eval_results = self.optimize_feature_set(
             X, y, global_importance_df['feature'].tolist(), gain_threshold
@@ -345,11 +289,14 @@ class ShapAnalyzer:
         ]
         
         X_opt, y_opt = prepare_combined_data(optimized_df_list, selected_attrs)
-        model_opt, _, _, X_test_opt, y_test_opt = self.train_model(X_opt, y_opt)
+        model_opt, _, _, X_test_opt, y_test_opt = self.train_model(X_opt, y_opt, model)
         shap_values_opt = self.generate_shap_values(model_opt, X_test_opt)
         
         return {
             'initial_results': {
+                'results': eval_results['results'],
+                'gains': eval_results['gains'],
+                'contributions': eval_results['contributions'],
                 'model': model,
                 'shap_values': shap_values,
                 'feature_importance': global_importance_df
@@ -358,11 +305,115 @@ class ShapAnalyzer:
                 'selected_attributes': selected_attrs,
                 'model': model_opt,
                 'shap_values': shap_values_opt,
-                'X_test': X_test_opt,
+                'X_test': X_test_opt, 
                 'y_test': y_test_opt
             }
         }
         
+    def plot_comparative_results(self, all_results: Dict[str, Dict[int, Dict[str, Any]]], tau: float = 0.05):
+        """Plot comparative analysis across different models and trace numbers using comprehensive visualization"""
+        # Define MATLAB-style colors explicitly as a list
+        colors = ['#0072BD', '#D95319', '#EDB120', '#7E2F8E', '#77AC30', '#4DBEEE', '#A2142F']
+        trace_styles = ['-', '--', ':', '-.']
+        
+        # Create separate plots for each model
+        for model_idx, (model_name, traces_results) in enumerate(all_results.items()):
+            fig = plt.figure(figsize=(20, 15))
+            gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+            
+            # Plot 1: Performance vs Attributes (top-left)
+            ax1 = fig.add_subplot(gs[0, 0])
+            for j, (n_traces, result) in enumerate(traces_results.items()):
+                initial_results = result['initial_results']['results']
+                n_attrs = [r['n_attributes'] for r in initial_results]
+                scores = [r['f1_score_mean'] for r in initial_results]
+                std = [r['f1_score_std'] for r in initial_results]
+                
+                ax1.errorbar(n_attrs, scores, yerr=std, 
+                            marker='o', label=f"{n_traces} traces",
+                            color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)],
+                            capsize=5)
+            
+            ax1.grid(True, linestyle='--', alpha=0.7)
+            ax1.set_xlabel('Number of Attributes')
+            ax1.set_ylabel('F1 Score')
+            ax1.set_title(f'{model_name}: Performance vs Number of Attributes')
+            ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+            # Plot 2: Gain Ratio (top-right)
+            ax2 = fig.add_subplot(gs[0, 1])
+            for j, (n_traces, result) in enumerate(traces_results.items()):
+                gains = result['initial_results']['gains']
+                ax2.plot(range(1, len(gains)+1), gains, 
+                        marker='o', label=f"{n_traces} traces",
+                        color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
+            
+            ax2.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
+            ax2.grid(True, linestyle='--', alpha=0.7)
+            ax2.set_xlabel('Attribute Addition Step')
+            ax2.set_ylabel('Gain Ratio')
+            ax2.set_title(f'{model_name}: Gain Ratio per Attribute Addition')
+            ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+            # Plot 3: Marginal Gains (bottom-left)
+            ax3 = fig.add_subplot(gs[1, 0])
+            
+            # Get unique attributes for this model
+            unique_attrs = sorted(set(
+                c['attribute'] 
+                for result in traces_results.values()
+                for c in result['initial_results']['contributions']
+            ))
+            
+            n_groups = len(unique_attrs)
+            n_bars = len(traces_results)
+            bar_width = 0.8 / n_bars
+            
+            for j, (n_traces, result) in enumerate(traces_results.items()):
+                contributions = result['initial_results']['contributions']
+                marginal_gains = [next((c['marginal_gain'] for c in contributions 
+                                    if c['attribute'] == attr), 0) 
+                                for attr in unique_attrs]
+                
+                x = np.arange(len(unique_attrs)) + j * bar_width
+                bars = ax3.bar(x, marginal_gains, bar_width,
+                            label=f"{n_traces} traces",
+                            color=colors[j % len(colors)], alpha=0.8)
+                
+                # Color bars based on threshold
+                for bar, gain in zip(bars, marginal_gains):
+                    if gain < tau:
+                        bar.set_alpha(0.3)
+            
+            ax3.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
+            ax3.set_xticks(np.arange(n_groups) + (n_bars-1) * bar_width / 2)
+            ax3.set_xticklabels(unique_attrs, rotation=45, ha='right')
+            ax3.grid(True, linestyle='--', alpha=0.7)
+            ax3.set_xlabel('Attributes')
+            ax3.set_ylabel('Marginal Gain')
+            ax3.set_title(f'{model_name}: Marginal Gain per Attribute')
+            ax3.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+            # Plot 4: Cumulative Performance (bottom-right)
+            ax4 = fig.add_subplot(gs[1, 1])
+            for j, (n_traces, result) in enumerate(traces_results.items()):
+                contributions = result['initial_results']['contributions']
+                cumulative_f1 = [c['cumulative_f1'] for c in contributions]
+                
+                ax4.plot(range(1, len(cumulative_f1) + 1), cumulative_f1,
+                        marker='o', label=f"{n_traces} traces",
+                        color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
+            
+            ax4.grid(True, linestyle='--', alpha=0.7)
+            ax4.set_xlabel('Number of Attributes')
+            ax4.set_ylabel('Cumulative F1 Score')
+            ax4.set_title(f'{model_name}: Cumulative Performance')
+            ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+            # Adjust layout and save
+            plt.savefig(f'{self.output_dir}/comparative_analysis_{model_name}.png',
+                        dpi=300, bbox_inches='tight', pad_inches=0.5)
+            plt.close()
     
 def plot_facies_distribution(filepath):
     # Load the facies volume data
@@ -564,33 +615,73 @@ def prepare_combined_data(df_list: List[pd.DataFrame], attr_names: List[str]) ->
     
     return pd.concat(features, axis=0, ignore_index=True), pd.concat(labels, axis=0, ignore_index=True)
 
+def prepare_all_datasets(config: Dict):
+    """Prepare datasets for all trace counts"""
+    datasets = {}
+    data_params = config['data_params']
+    
+    for n_traces in config['analysis_params']['n_traces']:
+        print(f"Processing dataset with {n_traces} traces...")
+        df_list, scalers = prepare_seismic_data(
+            data_dir=data_params['data_dir'],
+            n_traces=n_traces,
+            attr_names=data_params['attr_names'],
+            normalize=data_params['normalize'],
+            seed=data_params['seed']
+        )
+        datasets[n_traces] = (df_list, scalers)
+    
+    return datasets
 
 def main():
     # Set random seed for reproducibility
     config = {
+    'data_params': {
         'data_dir': '/home/dell/disk1/Jinlong/Horizontal-data',
         'attr_names': ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc'],
-        'n_traces': 1000,
-        'seed': 42,
-        'normalize': True
+        'normalize': True,
+        'seed': 42
+    },
+    'analysis_params': {
+        'n_traces': [10, 100, 500, 2000],
+        'models': {
+            'RandomForest': RandomForestClassifier(n_estimators=100),
+            'DecisionTree': DecisionTreeClassifier(max_depth=10),
+            'GradientBoosting': HistGradientBoostingClassifier()
+        }
     }
+}
     
     # Prepare data
     print("Processing seismic data...")
-    df_list, scalers = prepare_seismic_data(**config)
+    # df_list, scalers = prepare_seismic_data(config)
+    all_datasets = prepare_all_datasets(config)
     print("Data preparation complete!")
     
     # Run SHAP analysis
     print("\nRunning SHAP analysis...")
-    
     analyzer = ShapAnalyzer(
     output_dir='shap_results',
-    attr_name=config['attr_names'],
+    attr_name=config['data_params']['attr_names'],
     batch_size=5000  # Adjust based on your system's memory
 )
-    # Run complete analysis pipeline
+    # shap_results = analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
+    all_results = {}
+    for model_name, model in config['analysis_params']['models'].items():
+        model_results = {}
+        for n_traces in config['analysis_params']['n_traces']:
+            df_list, _ = all_datasets[n_traces]
+            results = analyzer.run_complete_analysis(
+                df_list=df_list,
+                model=model,
+                gain_threshold=0.05
+            )
+            model_results[n_traces] = results
+        all_results[model_name] = model_results
     
-    shap_results = analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
+    # Plot comparative results
+    analyzer.plot_comparative_results(all_results)
+    # shap_results = analyzer.run_comparative_analysis(data_dir='shap_results', configurations=config)
     print("Analysis complete!")
     
     # Create pairplot
@@ -598,7 +689,7 @@ def main():
     #     file_name = f'Inline_{il}_Crossline_{xl}'
     #     pairplot = create_visualization(df_list[i], file_name)
     
-    return shap_results
+    return all_results
 
 
 if __name__ == "__main__":
