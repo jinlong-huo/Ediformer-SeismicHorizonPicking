@@ -4,32 +4,41 @@ import seaborn as sns
 from scipy import stats
 import os
 
-def plot_grouped_distributions(data_dict, title, is_normalized=False, save_path=None):
+def plot_kde_comparison(original_data, normalized_data, title, save_path=None):
     """
-    Plot multiple distributions on the same axis.
-    data_dict: Dictionary with keys as names and values as data arrays
+    Plot KDE comparison using two separate subplots for better scale visualization.
     """
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
     
-    colors = ['blue', 'red', 'green', 'purple']
-    for (name, data), color in zip(data_dict.items(), colors):
-        sns.kdeplot(data=data.flatten(), ax=ax, color=color, fill=True, alpha=0.2, label=name)
+    # Plot original data
+    sns.kdeplot(data=original_data.flatten(), ax=ax1, color='blue', fill=True)
+    ax1.set_title('Original Data Distribution', pad=10)
+    ax1.set_xlabel('Value')
+    ax1.set_ylabel('Density')
+    ax1.grid(True, alpha=0.3)
     
-    ax.set_title(title, pad=10)
-    ax.set_xlabel('Value')
-    ax.set_ylabel('Density')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
+    # Add stats to original plot
+    stats_text = f'μ={np.mean(original_data):.2f}, σ={np.std(original_data):.2f}\n'
+    stats_text += f'Range: [{np.min(original_data):.2f}, {np.max(original_data):.2f}]'
+    ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes,
+             bbox=dict(facecolor='white', alpha=0.8),
+             verticalalignment='top', fontsize=10)
     
-    # Add stats to plot
-    stats_text = ""
-    for name, data in data_dict.items():
-        stats_text += f'{name}: μ={np.mean(data):.2f}, σ={np.std(data):.2f}\n'
+    # Plot normalized data
+    sns.kdeplot(data=normalized_data.flatten(), ax=ax2, color='red', fill=True)
+    ax2.set_title('Normalized Data Distribution', pad=10)
+    ax2.set_xlabel('Value')
+    ax2.set_ylabel('Density')
+    ax2.grid(True, alpha=0.3)
     
-    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-            bbox=dict(facecolor='white', alpha=0.8),
-            verticalalignment='top', fontsize=10)
+    # Add stats to normalized plot
+    stats_text = f'μ={np.mean(normalized_data):.2f}, σ={np.std(normalized_data):.2f}\n'
+    stats_text += f'Range: [{np.min(normalized_data):.2f}, {np.max(normalized_data):.2f}]'
+    ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
+             bbox=dict(facecolor='white', alpha=0.8),
+             verticalalignment='top', fontsize=10)
     
+    plt.suptitle(title, fontsize=14, y=1.02)
     plt.tight_layout()
     
     if save_path:
@@ -51,60 +60,54 @@ def analyze_seismic_distributions_with_normalization(data, save_dir, norm_method
     """Analyze distribution of original and normalized data."""
     os.makedirs(save_dir, exist_ok=True)
     
-    # Get middle slices
+    # Normalize full volume
+    normalized_data = normalize_data(data, method=norm_method)
+    
+    # Print basic statistics
+    print("\nOriginal Data Statistics:")
+    print(f"Mean: {np.mean(data):.4f}")
+    print(f"Std: {np.std(data):.4f}")
+    print(f"Range: [{np.min(data):.4f}, {np.max(data):.4f}]")
+    
+    print("\nNormalized Data Statistics:")
+    print(f"Mean: {np.mean(normalized_data):.4f}")
+    print(f"Std: {np.std(normalized_data):.4f}")
+    print(f"Range: [{np.min(normalized_data):.4f}, {np.max(normalized_data):.4f}]")
+    
+    # Analyze full volume
+    print("\nAnalyzing full volume distributions...")
+    plot_kde_comparison(
+        data, 
+        normalized_data,
+        f'Full Volume Distribution (Original vs {norm_method.capitalize()} Normalized)',
+        os.path.join(save_dir, f'full_volume_kde_comparison_{norm_method}.png')
+    )
+    
+    # Analyze middle slices
     slices = {
         'inline': (data.shape[1]//2, 1, 'Inline'),
         'xline': (data.shape[2]//2, 2, 'Crossline'),
         'time': (data.shape[0]//2, 0, 'Time')
     }
     
-    # Prepare data dictionaries
-    original_data_dict = {'Full': data}
-    normalized_data_dict = {'Full': normalize_data(data, method=norm_method)}
-    
-    # Add slices to dictionaries
     for name, (idx, axis, label) in slices.items():
+        print(f"\nAnalyzing {name} slice distributions...")
         slice_data = np.take(data, idx, axis=axis)
-        original_data_dict[label] = slice_data
-        normalized_data_dict[label] = normalize_data(slice_data, method=norm_method)
-    
-    # Print basic statistics
-    print("\nOriginal Data Statistics:")
-    for name, d in original_data_dict.items():
-        print(f"\n{name}:")
-        print(f"Mean: {np.mean(d):.4f}")
-        print(f"Std: {np.std(d):.4f}")
-        print(f"Range: [{np.min(d):.4f}, {np.max(d):.4f}]")
-    
-    print("\nNormalized Data Statistics:")
-    for name, d in normalized_data_dict.items():
-        print(f"\n{name}:")
-        print(f"Mean: {np.mean(d):.4f}")
-        print(f"Std: {np.std(d):.4f}")
-        print(f"Range: [{np.min(d):.4f}, {np.max(d):.4f}]")
-    
-    # Plot original distributions
-    plot_grouped_distributions(
-        original_data_dict,
-        'Original Data Distributions',
-        is_normalized=False,
-        save_path=os.path.join(save_dir, f'original_distributions_{norm_method}.png')
-    )
-    
-    # Plot normalized distributions
-    plot_grouped_distributions(
-        normalized_data_dict,
-        f'{norm_method.capitalize()} Normalized Data Distributions',
-        is_normalized=True,
-        save_path=os.path.join(save_dir, f'normalized_distributions_{norm_method}.png')
-    )
+        slice_norm = np.take(normalized_data, idx, axis=axis)
+        
+        plot_kde_comparison(
+            slice_data,
+            slice_norm,
+            f'Distribution of {label} Slice (Original vs {norm_method.capitalize()} Normalized)',
+            os.path.join(save_dir, f'{name}_slice_kde_comparison_{norm_method}.png')
+        )
 
 # Example usage
 if __name__ == "__main__":
     # Load seismic data
     seismic_data = np.load('/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy')
     seismic_data = seismic_data.reshape(-1, 951, 288)
-    seismic_data = seismic_data[::10,::10,::10]
+    seismic_data = seismic_data[::5,::5,::5]
     
     save_dir = 'seismic_kde_analysis'
     
