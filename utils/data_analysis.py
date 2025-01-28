@@ -19,6 +19,7 @@ from sklearn.base import BaseEstimator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
 from utils.check_cpu_info import get_optimal_cpu_count
 
 """
