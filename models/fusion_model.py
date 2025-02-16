@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchsummary import summary
 
 class LightweightChannelAttention(nn.Module):
     """Memory-efficient channel attention using grouped convolutions"""
@@ -218,3 +219,6 @@ if __name__ == "__main__":
     output = model(x)
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {output.shape}")
+    
+    summary(model, input_size=(14, 16, 288))
+    

@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import DataParallel
 from timm.models.layers import DropPath, to_2tuple
+from torchsummary import summary
 # (, Mlp, PatchEmbed, lecun_normal_,
 #                                 , trunc_normal_)
 
@@ -530,15 +531,16 @@ if __name__ == '__main__':
         model = DataParallel(model)
 
     # 3. Move the model to GPUs (if available)
-    model.to("cuda:0")
+    # model.to("cuda:0")
 
     # Example of how to use this model:
     # Input data (just an example, modify as per your needs)
-    input_tensor = torch.randn(8, 1, 16, 288).to(device)  # Batch size 8, single channel 256x256 image
+    # input_tensor = torch.randn(8, 1, 16, 288).to(device)  # Batch size 8, single channel 256x256 image
 
     # Forward pass
-    output = model(input_tensor)
-    print(output.shape)
+    # output = model(input_tensor)
+    # print(output.shape)
+    summary(model, input_size=(1, 16, 288))
     # batch_size = 2                                                                  
     # img_height =  64   # 1   352
     # img_width = 288   # 288 352
