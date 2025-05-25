@@ -38,7 +38,19 @@ from sklearn.base import BaseEstimator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+<<<<<<< HEAD:utils/seis_attr_shap.py
 from utils.seis_patch2csv import get_optimal_cpu_count
+=======
+
+from utils.check_cpu_info import get_optimal_cpu_count
+
+"""
+ 
+This code is for displaying label distribution
+
+"""
+
+>>>>>>> a8a77e98383c78f8a3e86882503425b67a494b00:utils/data_analysis.py
 
 class ShapAnalyzer:
     def __init__(self, output_dir: str = 'shap_results', attr_name: List[str] = None, batch_size: int = 1000):
@@ -542,6 +554,46 @@ class ShapAnalyzer:
     
 
 
+
+def plot_horizon_distribution(filepath):
+    # Load the facies volume data
+    horizon_volume = np.load(filepath)
+
+    # Calculate unique classes and their counts
+    unique_classes, counts = np.unique(horizon_volume, return_counts=True)
+
+    # Total number of samples
+    total_samples = horizon_volume.size
+
+    # Calculate percentagesf
+    percentages = (counts / total_samples) * 100
+
+    # Create a bar plot of the distribution
+    plt.figure(figsize=(12, 6))
+    plt.bar(unique_classes, percentages)
+    plt.title('Distribution of Horizon Classes')
+    plt.xlabel('Horizon Class')
+    plt.ylabel('Percentage (%)')
+
+    # Add percentage labels on top of each bar
+    for i, v in enumerate(percentages):
+        plt.text(unique_classes[i], v + 0.5, f'{v:.1f}%', ha='center')
+
+    # Add grid for better readability
+    plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+
+    # Print the distribution details
+    print("Horizon Class Distribution:")
+    for class_id, count, percentage in zip(unique_classes, counts, percentages):
+        print(f"Class {class_id}: {count:,} samples ({percentage:.1f}%)")
+
+    # Save the plot as an image file
+    plt.savefig('Horizon_cls_distribution.png')
+
+    # Display the plot
+    plt.show()
+
+
 def create_visualization(data, file_name):
     """
     Create pairplot and correlation matrix for given features and label
@@ -722,7 +774,9 @@ def prepare_all_datasets(config: Dict):
     
     return datasets
 
+
 def main():
+<<<<<<< HEAD:utils/seis_attr_shap.py
     # Set random seed for reproducibility
     config = {
     'data_params': {
@@ -774,13 +828,66 @@ def main():
     analyzer.plot_comparative_results(all_results)
     # shap_results = analyzer.run_comparative_analysis(data_dir='shap_results', configurations=config)
     print("Analysis complete!")
+=======
+    plot_horizon_distribution('F3_crop_horizon_freq.npy') # change this with f3 seismic data npy format.
+#     # Set random seed for reproducibility
+#     config = {
+#     'data_params': {
+#         'data_dir': '/home/dell/disk1/Jinlong/Horizontal-data',
+#         'attr_names': ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc'],
+#         'normalize': True,
+#         'seed': 42
+#     },
+#     'analysis_params': {
+#         'n_traces': [10, 100, 500, 2000],
+#         'models': {
+#             'RandomForest': RandomForestClassifier(n_estimators=100),
+#             'DecisionTree': DecisionTreeClassifier(max_depth=10),
+#             'GradientBoosting': HistGradientBoostingClassifier()
+#         }
+#     }
+# }
+    
+#     # Prepare data
+#     print("Processing seismic data...")
+#     # df_list, scalers = prepare_seismic_data(config)
+#     all_datasets = prepare_all_datasets(config)
+#     print("Data preparation complete!")
+    
+#     # Run SHAP analysis
+#     print("\nRunning SHAP analysis...")
+#     analyzer = ShapAnalyzer(
+#     output_dir='shap_results',
+#     attr_name=config['data_params']['attr_names'],
+#     batch_size=5000  # Adjust based on your system's memory
+# )
+#     # shap_results = analyzer.run_complete_analysis(df_list, gain_threshold=0.05) 
+#     all_results = {}
+#     for model_name, model in config['analysis_params']['models'].items():
+#         model_results = {}
+#         for n_traces in config['analysis_params']['n_traces']:
+#             df_list, _ = all_datasets[n_traces]
+#             results = analyzer.run_complete_analysis(
+#                 df_list=df_list,
+#                 model=model,
+#                 gain_threshold=0.05
+#             )
+#             model_results[n_traces] = results
+#         all_results[model_name] = model_results
+    
+#     # Plot comparative results
+#     analyzer.plot_comparative_results(all_results)
+#     # shap_results = analyzer.run_comparative_analysis(data_dir='shap_results', configurations=config)
+#     print("Analysis complete!")
+>>>>>>> a8a77e98383c78f8a3e86882503425b67a494b00:utils/data_analysis.py
     
     # Create pairplot
     # for i, (il, xl) in enumerate(positions):
     #     file_name = f'Inline_{il}_Crossline_{xl}'
     #     pairplot = create_visualization(df_list[i], file_name)
-    
-    return all_results
+    # return all_results
+
+    return
 
 
 if __name__ == "__main__":
