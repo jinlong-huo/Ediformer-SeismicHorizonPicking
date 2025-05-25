@@ -1,3 +1,32 @@
+# 3D Seismic Attribute Visualization Tool
+# 
+# Quick Start
+# 1. Prepare your data:
+#    - Place all .npy files in one folder
+#    - Required files: F3_seismic.npy, F3_crop_horizon_freq.npy, F3_predict_MCDL_crossline.npy, 
+#      F3_crop_horizon_phase.npy, F3_RMSAmp.npy, test_label_no_ohe.npy
+#
+# 2. Run the script:
+#    ```bash
+#    python utils/seis3dvis.py --mode train --attribute seismic
+#    ```
+#    Or edit the default parameters in the code
+#
+# Output
+# - Interactive 3D visualization with Mayavi
+# - Six orthogonal slice planes showing attribute data
+# - Visualize any of the following attributes:
+#   - seismic: original amplitude data
+#   - frequency: instantaneous frequency
+#   - phase: instantaneous phase
+#   - dip: structural dip attribute
+#   - rms: RMS amplitude
+#   - label: horizon/class labels
+# Use mouse to rotate, zoom and interact with the 3D volume.
+
+# Please pay attention to the following:
+# - Ensure you have the required libraries installed: mayavi, numpy, argparse
+
 import numpy as np
 import argparse
 

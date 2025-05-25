@@ -1,3 +1,22 @@
+# Seismic Attribute Importance Analysis Tool
+# 
+# Quick Start
+# 1. Prepare your data:
+#    - Place all .npy files in one folder
+#    - Required files: F3_seismic.npy, F3_crop_horizon_freq.npy, F3_predict_MCDL_crossline.npy, 
+#      F3_crop_horizon_phase.npy, F3_RMSAmp.npy, F3_complex_trace.npy, F3_coherence.npy, F3_Average_zero_crossing.npy
+#
+# 2. Run the script:
+#    ```bash
+#    python utils/attrshap.py
+#    ```
+#
+# Output
+# - SHAP plots: Feature importance visualizations
+# - Performance plots: Progressive evaluation of attribute combinations 
+# - Comparative analysis: Results across models and trace counts
+# All outputs saved as .png files in the 'shap_results' directory.
+
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -19,14 +38,7 @@ from sklearn.base import BaseEstimator
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.check_cpu_info import get_optimal_cpu_count
-
-"""
-
-This code is for displaying label distribution
-
-"""
-
+from utils.seis_patch2csv import get_optimal_cpu_count
 
 class ShapAnalyzer:
     def __init__(self, output_dir: str = 'shap_results', attr_name: List[str] = None, batch_size: int = 1000):
@@ -309,12 +321,21 @@ class ShapAnalyzer:
                 'y_test': y_test_opt
             }
         }
-        
+
     def plot_comparative_results(self, all_results: Dict[str, Dict[int, Dict[str, Any]]], tau: float = 0.05):
         """Plot comparative analysis across different models and trace numbers using comprehensive visualization"""
         # Define MATLAB-style colors explicitly as a list
         colors = ['#0072BD', '#D95319', '#EDB120', '#7E2F8E', '#77AC30', '#4DBEEE', '#A2142F']
         trace_styles = ['-', '--', ':', '-.']
+        
+        # Set larger font sizes for all plots
+        plt.rcParams.update({
+            'font.size': 18,
+            'axes.titlesize': 18,
+            'axes.labelsize': 18,
+            'xtick.labelsize': 18,
+            'ytick.labelsize': 18
+        })
         
         # Create separate plots for each model
         for model_idx, (model_name, traces_results) in enumerate(all_results.items()):
@@ -330,15 +351,15 @@ class ShapAnalyzer:
                 std = [r['f1_score_std'] for r in initial_results]
                 
                 ax1.errorbar(n_attrs, scores, yerr=std, 
-                            marker='o', label=f"{n_traces} traces",
-                            color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)],
-                            capsize=5)
+                        marker='o', label=f"{n_traces} traces",
+                        color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)],
+                        capsize=5)
             
             ax1.grid(True, linestyle='--', alpha=0.7)
-            ax1.set_xlabel('Number of Attributes')
-            ax1.set_ylabel('F1 Score')
-            ax1.set_title(f'{model_name}: Performance vs Number of Attributes')
-            ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax1.set_xlabel('Number of Attributes', fontsize=18)
+            ax1.set_ylabel('F1 Score', fontsize=18)
+            ax1.set_title(f'{model_name}: Performance vs Number of Attributes', fontsize=18)
+            # Legend removed
             
             # Plot 2: Gain Ratio (top-right)
             ax2 = fig.add_subplot(gs[0, 1])
@@ -350,10 +371,10 @@ class ShapAnalyzer:
             
             ax2.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
             ax2.grid(True, linestyle='--', alpha=0.7)
-            ax2.set_xlabel('Attribute Addition Step')
-            ax2.set_ylabel('Gain Ratio')
-            ax2.set_title(f'{model_name}: Gain Ratio per Attribute Addition')
-            ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax2.set_xlabel('Attribute Addition Step', fontsize=18)
+            ax2.set_ylabel('Gain Ratio', fontsize=18)
+            ax2.set_title(f'{model_name}: Gain Ratio per Attribute Addition', fontsize=18)
+            # Legend removed
             
             # Plot 3: Marginal Gains (bottom-left)
             ax3 = fig.add_subplot(gs[1, 0])
@@ -387,12 +408,12 @@ class ShapAnalyzer:
             
             ax3.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
             ax3.set_xticks(np.arange(n_groups) + (n_bars-1) * bar_width / 2)
-            ax3.set_xticklabels(unique_attrs, rotation=45, ha='right')
+            ax3.set_xticklabels(unique_attrs, rotation=45, ha='right', fontsize=18)
             ax3.grid(True, linestyle='--', alpha=0.7)
-            ax3.set_xlabel('Attributes')
-            ax3.set_ylabel('Marginal Gain')
-            ax3.set_title(f'{model_name}: Marginal Gain per Attribute')
-            ax3.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax3.set_xlabel('Attributes', fontsize=18)
+            ax3.set_ylabel('Marginal Gain', fontsize=18)
+            ax3.set_title(f'{model_name}: Marginal Gain per Attribute', fontsize=18)
+            # Legend removed
             
             # Plot 4: Cumulative Performance (bottom-right)
             ax4 = fig.add_subplot(gs[1, 1])
@@ -401,57 +422,125 @@ class ShapAnalyzer:
                 cumulative_f1 = [c['cumulative_f1'] for c in contributions]
                 
                 ax4.plot(range(1, len(cumulative_f1) + 1), cumulative_f1,
-                        marker='o', label=f"{n_traces} traces",
-                        color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
+                    marker='o', label=f"{n_traces} traces",
+                    color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
             
             ax4.grid(True, linestyle='--', alpha=0.7)
-            ax4.set_xlabel('Number of Attributes')
-            ax4.set_ylabel('Cumulative F1 Score')
-            ax4.set_title(f'{model_name}: Cumulative Performance')
-            ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax4.set_xlabel('Number of Attributes', fontsize=18)
+            ax4.set_ylabel('Cumulative F1 Score', fontsize=18)
+            ax4.set_title(f'{model_name}: Cumulative Performance', fontsize=18)
+            # Legend removed
             
             # Adjust layout and save
             plt.savefig(f'{self.output_dir}/comparative_analysis_{model_name}.png',
-                        dpi=300, bbox_inches='tight', pad_inches=0.5)
-            plt.close()
+                    dpi=300, bbox_inches='tight', pad_inches=0.5)
+            plt.close()    
+    # def plot_comparative_results(self, all_results: Dict[str, Dict[int, Dict[str, Any]]], tau: float = 0.05):
+    #     """Plot comparative analysis across different models and trace numbers using comprehensive visualization"""
+    #     # Define MATLAB-style colors explicitly as a list
+    #     colors = ['#0072BD', '#D95319', '#EDB120', '#7E2F8E', '#77AC30', '#4DBEEE', '#A2142F']
+    #     trace_styles = ['-', '--', ':', '-.']
+        
+    #     # Create separate plots for each model
+    #     for model_idx, (model_name, traces_results) in enumerate(all_results.items()):
+    #         fig = plt.figure(figsize=(20, 15))
+    #         gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+            
+    #         # Plot 1: Performance vs Attributes (top-left)
+    #         ax1 = fig.add_subplot(gs[0, 0])
+    #         for j, (n_traces, result) in enumerate(traces_results.items()):
+    #             initial_results = result['initial_results']['results']
+    #             n_attrs = [r['n_attributes'] for r in initial_results]
+    #             scores = [r['f1_score_mean'] for r in initial_results]
+    #             std = [r['f1_score_std'] for r in initial_results]
+                
+    #             ax1.errorbar(n_attrs, scores, yerr=std, 
+    #                         marker='o', label=f"{n_traces} traces",
+    #                         color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)],
+    #                         capsize=5)
+            
+    #         ax1.grid(True, linestyle='--', alpha=0.7)
+    #         ax1.set_xlabel('Number of Attributes')
+    #         ax1.set_ylabel('F1 Score')
+    #         ax1.set_title(f'{model_name}: Performance vs Number of Attributes')
+    #         # ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+    #         # Plot 2: Gain Ratio (top-right)
+    #         ax2 = fig.add_subplot(gs[0, 1])
+    #         for j, (n_traces, result) in enumerate(traces_results.items()):
+    #             gains = result['initial_results']['gains']
+    #             ax2.plot(range(1, len(gains)+1), gains, 
+    #                     marker='o', label=f"{n_traces} traces",
+    #                     color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
+            
+    #         ax2.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
+    #         ax2.grid(True, linestyle='--', alpha=0.7)
+    #         ax2.set_xlabel('Attribute Addition Step')
+    #         ax2.set_ylabel('Gain Ratio')
+    #         ax2.set_title(f'{model_name}: Gain Ratio per Attribute Addition')
+    #         # ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+    #         # Plot 3: Marginal Gains (bottom-left)
+    #         ax3 = fig.add_subplot(gs[1, 0])
+            
+    #         # Get unique attributes for this model
+    #         unique_attrs = sorted(set(
+    #             c['attribute'] 
+    #             for result in traces_results.values()
+    #             for c in result['initial_results']['contributions']
+    #         ))
+            
+    #         n_groups = len(unique_attrs)
+    #         n_bars = len(traces_results)
+    #         bar_width = 0.8 / n_bars
+            
+    #         for j, (n_traces, result) in enumerate(traces_results.items()):
+    #             contributions = result['initial_results']['contributions']
+    #             marginal_gains = [next((c['marginal_gain'] for c in contributions 
+    #                                 if c['attribute'] == attr), 0) 
+    #                             for attr in unique_attrs]
+                
+    #             x = np.arange(len(unique_attrs)) + j * bar_width
+    #             bars = ax3.bar(x, marginal_gains, bar_width,
+    #                         label=f"{n_traces} traces",
+    #                         color=colors[j % len(colors)], alpha=0.8)
+                
+    #             # Color bars based on threshold
+    #             for bar, gain in zip(bars, marginal_gains):
+    #                 if gain < tau:
+    #                     bar.set_alpha(0.3)
+            
+    #         ax3.axhline(y=tau, color='#FF0000', linestyle='--', label=f'Threshold ({tau})')
+    #         ax3.set_xticks(np.arange(n_groups) + (n_bars-1) * bar_width / 2)
+    #         ax3.set_xticklabels(unique_attrs, rotation=45, ha='right')
+    #         ax3.grid(True, linestyle='--', alpha=0.7)
+    #         ax3.set_xlabel('Attributes')
+    #         ax3.set_ylabel('Marginal Gain')
+    #         ax3.set_title(f'{model_name}: Marginal Gain per Attribute')
+    #         # ax3.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+    #         # Plot 4: Cumulative Performance (bottom-right)
+    #         ax4 = fig.add_subplot(gs[1, 1])
+    #         for j, (n_traces, result) in enumerate(traces_results.items()):
+    #             contributions = result['initial_results']['contributions']
+    #             cumulative_f1 = [c['cumulative_f1'] for c in contributions]
+                
+    #             ax4.plot(range(1, len(cumulative_f1) + 1), cumulative_f1,
+    #                     marker='o', label=f"{n_traces} traces",
+    #                     color=colors[j % len(colors)], linestyle=trace_styles[j % len(trace_styles)])
+            
+    #         ax4.grid(True, linestyle='--', alpha=0.7)
+    #         ax4.set_xlabel('Number of Attributes')
+    #         ax4.set_ylabel('Cumulative F1 Score')
+    #         ax4.set_title(f'{model_name}: Cumulative Performance')
+    #         # ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            
+    #         # Adjust layout and save
+    #         plt.savefig(f'{self.output_dir}/comparative_analysis_{model_name}.png',
+    #                     dpi=300, bbox_inches='tight', pad_inches=0.5)
+    #         plt.close()
     
-def plot_facies_distribution(filepath):
-    # Load the facies volume data
-    facies_volume = np.load(filepath)
 
-    # Calculate unique classes and their counts
-    unique_classes, counts = np.unique(facies_volume, return_counts=True)
-
-    # Total number of samples
-    total_samples = facies_volume.size
-
-    # Calculate percentagesf
-    percentages = (counts / total_samples) * 100
-
-    # Create a bar plot of the distribution
-    plt.figure(figsize=(12, 6))
-    plt.bar(unique_classes, percentages)
-    plt.title('Distribution of Facies Classes')
-    plt.xlabel('Facies Class')
-    plt.ylabel('Percentage (%)')
-
-    # Add percentage labels on top of each bar
-    for i, v in enumerate(percentages):
-        plt.text(unique_classes[i], v + 0.5, f'{v:.1f}%', ha='center')
-
-    # Add grid for better readability
-    plt.grid(True, axis='y', linestyle='--', alpha=0.7)
-
-    # Print the distribution details
-    print("Facies Class Distribution:")
-    for class_id, count, percentage in zip(unique_classes, counts, percentages):
-        print(f"Class {class_id}: {count:,} samples ({percentage:.1f}%)")
-
-    # Save the plot as an image file
-    plt.savefig('facies_cls_distribution.png')
-
-    # Display the plot
-    plt.show()
 
 def create_visualization(data, file_name):
     """
@@ -638,15 +727,17 @@ def main():
     config = {
     'data_params': {
         'data_dir': '/home/dell/disk1/Jinlong/Horizontal-data',
-        'attr_names': ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc'],
+        # 'attr_names': ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence', 'azc'],
+        'attr_names': ['seismic', 'freq', 'dip', 'phase', 'rms', 'complex', 'coherence'],
         'normalize': True,
         'seed': 42
     },
     'analysis_params': {
-        'n_traces': [10, 100, 500, 2000],
+        'n_traces': [5, 30, 100, 300],
+        # 'n_traces': [10, 100, 500, 2000],
         'models': {
-            'RandomForest': RandomForestClassifier(n_estimators=100),
-            'DecisionTree': DecisionTreeClassifier(max_depth=10),
+            'RandomForest': RandomForestClassifier(n_estimators=5),
+            'DecisionTree': DecisionTreeClassifier(max_depth=2),
             'GradientBoosting': HistGradientBoostingClassifier()
         }
     }

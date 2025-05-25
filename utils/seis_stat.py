@@ -1,3 +1,21 @@
+# Seismic Data Distribution Analysis Tool
+# 
+# Quick Start
+# 1. Prepare your data:
+#    - Load your seismic volume (.npy format)
+#    - Only requires the original seismic data file (e.g., F3_seismic.npy)
+#
+# 2. Run the script:
+#    ```bash
+#    python utils/seisstat.py
+#    ```
+#
+# Output
+# - Distribution plots: KDE visualizations comparing original vs normalized data
+# - Statistical metrics: Mean, standard deviation, data ranges
+# - Multiple analyses: Full volume and slice-based distribution comparisons
+# All outputs saved as .png files in the 'seismic_kde_analysis' directory.
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -6,40 +24,79 @@ import os
 
 def plot_kde_comparison(original_data, normalized_data, title, save_path=None):
     """
-    Plot KDE comparison using two separate subplots for better scale visualization.
+    Plot KDE comparison using two separate subplots for better scale visualization,
+    focusing on the main distribution range.
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
     
+    # Increase font sizes
+    AXIS_FONTSIZE = 14  # Larger font for axis labels
+    TITLE_FONTSIZE = 16  # Larger font for subplot titles
+    MAIN_TITLE_FONTSIZE = 18  # Larger font for main title
+    TICK_FONTSIZE = 12  # Larger font for tick labels
+    STATS_FONTSIZE = 12  # Font size for stats text
+    
+    # Calculate percentiles to focus on main distribution (removing extreme outliers)
+    # For original data
+    orig_flattened = original_data.flatten()
+    orig_lower = np.percentile(orig_flattened, 0.5)
+    orig_upper = np.percentile(orig_flattened, 99.5)
+    orig_mean = np.mean(orig_flattened)
+    orig_std = np.std(orig_flattened)
+    
+    # For normalized data
+    norm_flattened = normalized_data.flatten()
+    norm_lower = np.percentile(norm_flattened, 0.5)
+    norm_upper = np.percentile(norm_flattened, 99.5)
+    norm_mean = np.mean(norm_flattened)
+    norm_std = np.std(norm_flattened)
+    
     # Plot original data
-    sns.kdeplot(data=original_data.flatten(), ax=ax1, color='blue', fill=True)
-    ax1.set_title('Original Data Distribution', pad=10)
-    ax1.set_xlabel('Value')
-    ax1.set_ylabel('Density')
+    sns.kdeplot(data=orig_flattened, ax=ax1, color='blue', fill=True)
+    ax1.set_title('Original Data Distribution', fontsize=TITLE_FONTSIZE, pad=10)
+    ax1.set_xlabel('Value', fontsize=AXIS_FONTSIZE)
+    ax1.set_ylabel('Density', fontsize=AXIS_FONTSIZE)
+    ax1.tick_params(axis='both', which='major', labelsize=TICK_FONTSIZE)
     ax1.grid(True, alpha=0.3)
     
+    # Set x-limits to focus on main distribution
+    x_margin = 0.5 * orig_std  # Add some margin
+    ax1.set_xlim([orig_lower - x_margin, orig_upper + x_margin])
+    
     # Add stats to original plot
-    stats_text = f'μ={np.mean(original_data):.2f}, σ={np.std(original_data):.2f}\n'
-    stats_text += f'Range: [{np.min(original_data):.2f}, {np.max(original_data):.2f}]'
+    stats_text = f'μ={orig_mean:.2f}, σ={orig_std:.2f}\n'
+    stats_text += f'Range: [{np.min(orig_flattened):.2f}, {np.max(orig_flattened):.2f}]'
+    stats_text += f'\nDisplay range: [{orig_lower:.2f}, {orig_upper:.2f}]'
     ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes,
              bbox=dict(facecolor='white', alpha=0.8),
-             verticalalignment='top', fontsize=10)
+             verticalalignment='top', fontsize=STATS_FONTSIZE)
     
     # Plot normalized data
-    sns.kdeplot(data=normalized_data.flatten(), ax=ax2, color='red', fill=True)
-    ax2.set_title('Normalized Data Distribution', pad=10)
-    ax2.set_xlabel('Value')
-    ax2.set_ylabel('Density')
+    sns.kdeplot(data=norm_flattened, ax=ax2, color='red', fill=True)
+    ax2.set_title('Normalized Data Distribution', fontsize=TITLE_FONTSIZE, pad=10)
+    ax2.set_xlabel('Value', fontsize=AXIS_FONTSIZE)
+    ax2.set_ylabel('Density', fontsize=AXIS_FONTSIZE)
+    ax2.tick_params(axis='both', which='major', labelsize=TICK_FONTSIZE)
     ax2.grid(True, alpha=0.3)
     
+    # Set x-limits to focus on main distribution
+    x_margin = 0.5 * norm_std  # Add some margin
+    ax2.set_xlim([norm_lower - x_margin, norm_upper + x_margin])
+    
     # Add stats to normalized plot
-    stats_text = f'μ={np.mean(normalized_data):.2f}, σ={np.std(normalized_data):.2f}\n'
-    stats_text += f'Range: [{np.min(normalized_data):.2f}, {np.max(normalized_data):.2f}]'
+    stats_text = f'μ={norm_mean:.2f}, σ={norm_std:.2f}\n'
+    stats_text += f'Range: [{np.min(norm_flattened):.2f}, {np.max(norm_flattened):.2f}]'
+    stats_text += f'\nDisplay range: [{norm_lower:.2f}, {norm_upper:.2f}]'
     ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
              bbox=dict(facecolor='white', alpha=0.8),
-             verticalalignment='top', fontsize=10)
+             verticalalignment='top', fontsize=STATS_FONTSIZE)
     
-    plt.suptitle(title, fontsize=14, y=1.02)
+    # Improve main title positioning and size
+    plt.suptitle(title, fontsize=MAIN_TITLE_FONTSIZE, y=0.98)
     plt.tight_layout()
+    
+    # Adjust spacing to ensure title is well displayed
+    plt.subplots_adjust(top=0.9)
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')

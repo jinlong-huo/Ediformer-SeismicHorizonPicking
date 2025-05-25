@@ -1,3 +1,21 @@
+# Seismic Patch to Volume Converter
+# 
+# Quick Start
+# 1. Prepare your data:
+#    - Original seismic data file (to determine patch structure)
+#    - Patched prediction file from neural network output
+#
+# 2. Run the script:
+#    ```bash
+#    python utils/unpatch.py
+#    ```
+#    Or edit the file paths in the code
+#
+# Output
+# - Reconstructed volume (.npy): Prediction patches reassembled into original 3D shape
+# - CSV export (.csv): Flattened 2D representation for spreadsheet analysis
+# All files saved in the current directory with timestamp.
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -8,10 +26,6 @@ import imageio
 
 # First you need the original data to (of how you patch to obtain the unfold shape(the patch size))
 x = np.load(r'D:\Pycharm Projects\Wu_unet\DL_horizon_demo\data\test_data.npy') # have something wrong at head
-# x = np.load(r'D:\Pycharm Projects\Horizon_Picking\data\F3_crop_horizon_freq.npy') # have something wrong at head
-# x = np.load(r'D:\Pycharm Projects\Horizon_Picking\data\F3_predict_MCDL_crossline.npy') # have something wrong at head
-# x = np.load(r'D:\Pycharm Projects\Horizon_Picking\data\F3_RMSAmp.npy') # have something wrong at head
-# x = np.load(r'D:\Pycharm Projects\Horizon_Picking\data\F3_crop_horizon_phase.npy') # have something wrong at head
 
 x = x.reshape(-1, 951, 288)
 x = np.swapaxes((x),-1,1)
@@ -29,22 +43,12 @@ x = F.pad(x, [x.size(3) % kw // 2, x.size(3) % kw // 2,
 patches = x.unfold(1, kc, dc).unfold(2, kh, dh).unfold(3, kw, dw)
 unfold_shape = patches.size()
 print(patches.shape)
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\seg_patch_predictions.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\ouput\rms_prediction.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\output\rms_prediction.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\output\phase_prediction.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\output\dip_prediction.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\dformer_best_predictions_all.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\output\seg_patch_forshow.npy')
-# patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\output\phase_data_for_show.npy')
-
 
 # change here to select your data and transform to the original shape
 
 # patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\dformer_predict_label_2023-09-08-12-55.npy')
 # patches = np.load(r'D:\Pycharm Projects\Pytorch_Template\_pred_label.npy')
-# patches = np.load(r"D:\Pycharm Projects\Pytorch_Template\unet_prediction.npy")
-# patches = np.load(r"D:\Pycharm Projects\Pytorch_Template\unet_prediction.npy")
+
 patches = np.load(r"D:\Pycharm Projects\Pytorch_Template\dformer_predict_label_2023-09-08-12-55.npy")
 patches = torch.tensor(patches)
 # patches = torch.argmax(patches,dim=1)
