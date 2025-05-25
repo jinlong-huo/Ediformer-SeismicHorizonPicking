@@ -613,17 +613,3 @@ if __name__ == '__main__':
     # Forward pass
     output, attn_results = model(input_tensor)
     print(output.shape)
-<<<<<<< HEAD:Ediformer/models/diformer.py
-
-=======
-    # summary(model, input_size=(1, 16, 288))
-
-    attn_vis = attn_results[2].numpy()  # Convert first head's attention map to NumPy
-    plt.figure(figsize=(6, 5))
-    plt.imshow(attn_vis, cmap='viridis')
-    plt.colorbar()
-    plt.title("Attention Weights from Block 3 (Head 1)")
-    plt.xlabel("Key positions")
-    plt.ylabel("Query positions")
-    plt.show()
->>>>>>> a8a77e98383c78f8a3e86882503425b67a494b00:Ediformer/models/diformer_patch_attn.py
