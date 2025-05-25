@@ -1,0 +1,60 @@
+# Training configuration
+training:
+  batch_size: 16
+  num_epochs: 2
+  embed_dims: [72, 36, 36, 36]
+  num_heads: 2
+  num_classes: 7
+
+# Data configuration
+data:
+  height: 288
+  width: 32
+  kernel_size: [1, 288, 32]
+  stride: [1, 32, 32]
+
+# Model paths
+paths:
+  meta_model_checkpoint: "/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt"
+  fusion_model_checkpoint: "/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/outputfusion_model_ckpt"
+  training_dir: "./process/training"
+  output_dir: "./process/output"
+
+# Attributes to use
+attributes:
+  - seismic
+  - freq
+  # - dip
+  # - phase
+  # - rms
+  # - complex
+  # - coherence
+  # - average_zero
+
+# Data paths
+data_paths:
+  seismic:
+    data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy"
+    label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  freq:
+    data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy"
+    label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # dip:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # phase:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # rms:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_RMSAmp.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # complex:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # coherence:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+  # average_zero:
+  #   data: "/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy"
+  #   label: "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+    
