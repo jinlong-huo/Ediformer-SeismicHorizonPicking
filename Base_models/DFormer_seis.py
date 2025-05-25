@@ -132,38 +132,6 @@ def generate_val_inline(data):
 
     return data
 
-# def calculate_metrics(pred, target, num_classes):
-#     """
-#     Calculates PSNR, SSIM, MSE, and DICE coefficient for each class in a multiclass segmentation task.
-#     """
-#     psnr_metric = PSNR(data_range=1.0)
-#     ssim_metric = SSIM(data_range=1.0)
-#     mse_metric = MeanSquaredError()
-#
-#     psnrs = []
-#     ssims = []
-#     mses = []
-#     dices = []
-#
-#     for i in range(num_classes):
-#         pred_i = (pred == i).float()
-#         target_i = (target == i).float()
-#         # print(pred_i.shape, target_i.shape)
-#         mse_metric.update((pred_i, target_i))
-#         psnr_metric.update((pred_i, target_i))
-#         ssim_metric.update((pred_i, target_i))
-#
-#         intersection = (pred_i * target_i).sum()
-#         dice_i = (2. * intersection) / (pred_i.sum() + target_i.sum())
-#
-#         mses.append(mse_metric.compute())
-#         psnrs.append(psnr_metric.compute())
-#         ssims.append(ssim_metric.compute())
-#         dices.append(dice_i.item())
-#
-#     return psnrs, ssims, mses, dices
-
-
 class dataset(Dataset):
     def __init__(self, data, label):
         self.data = data
