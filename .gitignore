@@ -20,7 +20,6 @@ __pycache__/
 *.log
 
 .history/
-.history
 ./exploration-geophysics-mindmap.md
 ./train_seismic_origin_comment_part.py
 ./model_ensembling_origin.py
