@@ -583,9 +583,6 @@ def print_model_structure(model):
     for name, param in model.named_parameters():
         print(f"{name}: {param.size()} = {param.numel():,} parameters")
 
-
-
-
 if __name__ == '__main__':
     
 
