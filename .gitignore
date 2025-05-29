@@ -201,9 +201,9 @@ lightning_logs/
 !.gitignore
 
 # Keep the main project structure
-!Ediformer/
-!Ediformer/**
-
+# !Ediformer/
+# !Ediformer/**
+Ediformer/__pycache__/
 # Keep utility scripts but ignore GLCM subdirectory
 !utils/
 !utils/**
