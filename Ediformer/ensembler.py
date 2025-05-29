@@ -33,7 +33,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from models.diformer import Diformer
-from models.memfusion import UNetFusionModel
+from models.memfusion import MemoryEfficientUNetFusion
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
 
@@ -91,7 +91,7 @@ class AdvancedEnsembleLearner:
         # total_feature_dim = num_classifiers * self.classifiers[0].feature_projection.out_features
         total_feature_dim = num_classifiers * self.classifiers[0].feature_fuse_projection.out_features
 
-        self.fusion_model = UNetFusionModel(
+        self.fusion_model = MemoryEfficientUNetFusion(
             total_feature_dim=total_feature_dim, 
             num_classes=num_classes,
             fusion_height=height,
