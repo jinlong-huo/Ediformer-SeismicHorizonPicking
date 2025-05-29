@@ -32,7 +32,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from models.diformer import Diformer
+
+# from models.diformer import Diformer
+from models.diformer_patch_attn import Diformer
 from models.memfusion import MemoryEfficientUNetFusion
 from utils.datafactory import HorizonDataFactory
 from utils.tools import EarlyStopping
@@ -286,6 +288,16 @@ class AdvancedEnsembleLearner:
 
 def main():
     stime = time.ctime()
+    
+    # Create necessary directories
+    os.makedirs(args.mm_ckpt_path, exist_ok=True)
+    os.makedirs(args.fm_ckpt_path, exist_ok=True)
+    os.makedirs(args.training_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs('./logs/training', exist_ok=True)
+    os.makedirs('./outputs/figures', exist_ok=True)
+    os.makedirs('./outputs/predictions', exist_ok=True)
+    
     # freq phase seismic dip amp
     # attribute_names = ['freq', 'phase', 'seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
     # attribute_names = ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
@@ -360,11 +372,11 @@ def parse_args():
     parser.add_argument('--width', type=int, default=16, 
                         help='data width size')
 
-    parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 
-                        help='checkpoint saving/loading path of meta model')
+    # parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 
+    #                     help='checkpoint saving/loading path of meta model')
     
-    parser.add_argument('--fm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/fusion_model_ckpt', 
-                        help='checkpoint saving/loading path of fusion model')
+    # parser.add_argument('--fm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/fusion_model_ckpt', 
+    #                     help='checkpoint saving/loading path of fusion model')
 
     parser.add_argument('--is_testing', type=bool, default=False,
                         help='Script in testing mode')
@@ -381,11 +393,17 @@ def parse_args():
     parser.add_argument('--num_epoch', type=int,  default=20,
                         help='Overall training epochs')
     
-    parser.add_argument('--training_dir', type=str,  default='./process/training',
-                        help='training log dir')
+    parser.add_argument('--mm_ckpt_path', type=str, default='./checkpoints/meta_models', 
+                        help='checkpoint saving/loading path of meta model')
     
-    parser.add_argument('--output_dir', type=str,  default='./process/output',
-                        help='output log dir')
+    parser.add_argument('--fm_ckpt_path', type=str, default='./checkpoints/fusion_models', 
+                            help='checkpoint saving/loading path of fusion model')
+
+    parser.add_argument('--training_dir', type=str, default='./logs/training',
+                            help='training log dir')
+        
+    parser.add_argument('--output_dir', type=str, default='./outputs/results',
+                            help='output log dir')
     
     parser.add_argument('--attr_dirs', type=dict,  default = {
         # "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
@@ -426,5 +444,4 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     main()
-    
-    
+

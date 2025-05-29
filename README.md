@@ -74,25 +74,19 @@ python utils/seis3dvis.py
 
 ## Models
 
-### 1. DexiNed (Dense Extreme Inception Network)
-- **Purpose**: Multi-scale edge detection for seismic horizons
-- **Input**: `[batch_size, 1, height, width]` - Single-channel seismic data
-- **Output**: 7 edge maps at different scales + fused ensemble result
-- **Architecture**: Dense blocks with skip connections
-
-### 2. Diformer (Transformer-based Model)
+### 1. Diformer (Transformer-based Model)
 - **Purpose**: Attention-based seismic horizon segmentation
 - **Input**: `[batch_size, 1, 16, 288]` - Typical patch dimensions
 - **Output**: `[batch_size, 7, 16, 288]` - 7-class horizon predictions
 - **Architecture**: Dense CNN blocks + transformer attention mechanisms
 
-### 3. MemFusion (Memory-Efficient Fusion)
+### 2. MemFusion (Memory-Efficient Fusion)
 - **Purpose**: Efficient multi-model feature fusion
 - **Input**: Combined features from multiple models
 - **Output**: Final segmentation predictions
 - **Architecture**: Lightweight attention with sparse cross-attention
 
-### 4. Ensemble Model
+### 3. Ensemble Model
 - **Purpose**: Meta-learning across multiple seismic attributes
 - **Components**: Individual meta-models + fusion model
 - **Attributes**: Seismic, frequency, phase, dip, RMS, coherence

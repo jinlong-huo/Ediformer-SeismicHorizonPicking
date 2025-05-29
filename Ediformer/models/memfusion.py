@@ -230,7 +230,8 @@ class MemoryEfficientUNetFusion(nn.Module):
 
 if __name__ == "__main__":
     # Test the memory-efficient model
-    total_feature_dim = 14
+    # Basically, feature dim should be the times of 7 and then make sure it is aligned with the model's second dim. 
+    total_feature_dim = 28
     num_classes = 7
     fusion_height = 16
     fusion_width = 288
@@ -241,12 +242,13 @@ if __name__ == "__main__":
         fusion_height=fusion_height,
         fusion_width=fusion_width
     )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     
-    # Test input
-    x = torch.randn(4, 14, 16, 288)
+    x = torch.randn(4, 28, 16, 288).to(device)
     output = model(x)
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {output.shape}")
     
-    summary(model, input_size=(14, 16, 288))
+    # summary(model, input_size=(14, 16, 288))
     
