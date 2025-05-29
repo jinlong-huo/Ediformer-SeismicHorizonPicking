@@ -1,38 +1,8 @@
-# Diformer: Transformer-Based Seismic Horizon Picking Model
-# 
-# Quick Start
-# 1. Prepare your data:
-#    - Input: Seismic data formatted as tensors of shape [batch_size, 1, height, width]
-#    - Typical input dimensions: [batch_size, 1, 16, 288]
-#
-# 2. Create and run the model:
-#    ```python
-#    from models.diformer import Diformer
-#    
-#    model = Diformer(dim=[72, 36, 36, 36], num_heads=2)
-#    model.to(device)
-#    
-#    # Forward pass
-#    output = model(input_tensor)  # Returns tensor of shape [batch_size, 7, height, width]
-#    ```
-#
-# Output
-# - Tensor with shape [batch_size, 7, height, width] representing 7 horizon classes
-# - Can extract features using extract_features=True parameter
-# 
-# Architecture combines dense convolutional blocks with transformer-style attention
-# for improved seismic horizon detection.
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import DataParallel
 from timm.models.layers import DropPath, to_2tuple
-import matplotlib.pyplot as plt
-
-# from torchsummary import summary
-# (, Mlp, PatchEmbed, lecun_normal_,
-#                                 , trunc_normal_)
+from torch.nn import DataParallel
 
 
 def weight_init(m):
@@ -54,31 +24,6 @@ def weight_init(m):
             torch.nn.init.normal_(m.weight, std=0.1)
         if m.bias is not None:
             torch.nn.init.zeros_(m.bias)  #
-
-
-# class CoFusion(nn.Module):
-
-#     def __init__(self, in_ch, out_ch):
-#         super(CoFusion, self).__init__()
-#         self.conv1 = nn.Conv2d(in_ch, 64, kernel_size=1,
-#                                stride=1, padding=1)
-#         self.conv2 = nn.Conv2d(64, 64, kernel_size=1,
-#                                stride=1, padding=1)
-#         self.conv3 = nn.Conv2d(64, out_ch, kernel_size=1,
-#                                stride=1, padding=1)
-#         self.relu = nn.ReLU()   
-
-#         self.norm_layer1 = nn.GroupNorm(4, 64)
-#         self.norm_layer2 = nn.GroupNorm(4, 64)
-
-#     def forward(self, x):
-#         # fusecat = torch.cat(x, dim=1)
-#         attn = self.relu(self.norm_layer1(self.conv1(x)))
-#         attn = self.relu(self.norm_layer2(self.conv2(attn)))
-#         attn = F.softmax(self.conv3(attn), dim=1)
-
-#         # return ((fusecat * attn).sum(1)).unsqueeze(1)
-#         return ((x * attn).sum(1)).unsqueeze(1)
 
 
 class _DenseLayer(nn.Sequential):
@@ -286,18 +231,16 @@ class LowMixer(nn.Module):
         self.pool = nn.AvgPool2d(pool_size, stride=pool_size, padding=0, count_include_pad=False) if pool_size > 1 else nn.Identity()
         self.uppool = nn.Upsample(scale_factor=pool_size) if pool_size > 1 else nn.Identity()
         
-        self.last_attn = None
 
     def att_fun(self, q, k, v, B, N, C):
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
-        # Save attention weights for visualization
-        self.last_attn = attn.detach().cpu()
         attn = self.attn_drop(attn)
+        # x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = (attn @ v).transpose(2, 3).reshape(B, C, N)
         return x
 
-    def forward(self, x, return_attn=False):
+    def forward(self, x):
         # B, C, H, W          2 36 256 1
         B, _, _, _ = x.shape
         # xa = self.pool(x)
@@ -314,10 +257,7 @@ class LowMixer(nn.Module):
         # xa = self.uppool(xa)
         # TODO: We change the previous two sentences with our own requirements
         xa = xa.view(B, C, x.shape[2], x.shape[3])#.permute(0, 3, 1, 2)
-        self.last_attn = self.last_attn.view(B, C, x.shape[2], x.shape[3])
-
-        if return_attn:
-            return xa, self.last_attn
+        
         return xa
 
 class Mixer(nn.Module):
@@ -337,25 +277,24 @@ class Mixer(nn.Module):
         self.proj = nn.Conv2d(low_dim+high_dim*2, dim, kernel_size=1, stride=1, padding=0)
         self.proj_drop = nn.Dropout(proj_drop)
         
-    def forward(self, x, return_attn=False):
+    def forward(self, x):
         B, H, W, C = x.shape
+        # 2 256 1 72
         x = x.permute(0, 3, 1, 2)
-        hx = x[:, :self.high_dim, :, :].contiguous()
+        
+        hx = x[:,:self.high_dim,:,:].contiguous() # ([2, 16, 256, 72])
         hx = self.high_mixer(hx)
-        lx = x[:, self.high_dim:, :, :].contiguous()
-        if return_attn:
-            lx, attn = self.low_mixer(lx, return_attn=True)
-        else:
-            lx = self.low_mixer(lx)
-        x = torch.cat((hx, lx), dim=1)
+        
+        lx = x[:,self.high_dim:,:,:].contiguous() # ([2, 8, 256, 72])
+        lx = self.low_mixer(lx)
+       
+        x = torch.cat((hx, lx), dim=1) # if we cat at dim 'x' then we ignore the difference of that dim
         x = x + self.conv_fuse(x)
         x = self.proj(x)
         x = self.proj_drop(x)
         x = x.permute(0, 2, 3, 1).contiguous()
-        if return_attn:
-            return x, attn
-        return x
         
+        return x
 
 def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
@@ -375,20 +314,6 @@ def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: b
     if keep_prob > 0.0 and scale_by_keep:
         random_tensor.div_(keep_prob)
     return x * random_tensor
-
-# class DropPath(nn.Module):
-#     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
-#     """
-#     def __init__(self, drop_prob: float = 0., scale_by_keep: bool = True):
-#         super(DropPath, self).__init__()
-#         self.drop_prob = drop_prob
-#         self.scale_by_keep = scale_by_keep
-
-#     def forward(self, x):
-#         return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
-
-#     def extra_repr(self):
-#         return f'drop_prob={round(self.drop_prob,3):0.3f}'
 
 
 class Diformer(nn.Module):
@@ -489,13 +414,7 @@ class Diformer(nn.Module):
         
         # # Block 3
         block_3_pre_dense = self.pre_dense_3(block_2_down)
-        # Get both the processed feature and the attention weights:
-
-        # we modify this original block_3_attn into sth below, since we generate the attention weights
-        # block_3_attn_dense = self.drop_path(self.attn1(self.norm1(block_3_pre_dense)))
-        block_3_dense_out, block_3_attn = self.attn1(self.norm1(block_3_pre_dense), return_attn=True)
-        block_3_attn_dense = self.drop_path(block_3_dense_out)
-
+        block_3_attn_dense = self.drop_path(self.attn1(self.norm1(block_3_pre_dense)))
         #  block_3, _ = self.dblock_3([block_2_add, block_3_pre_dense]) original one
         block_3, _ = self.dblock_3([block_2_add, block_3_attn_dense])    
         
@@ -505,11 +424,7 @@ class Diformer(nn.Module):
       
         # Block 4
         block_4_pre_dense = self.pre_dense_4(block_3_down) # expand second dimension
-        # block_4_attn_dense = self.drop_path(self.attn2(self.norm2(block_4_pre_dense)))
-
-        block_4_dense_out, block_4_attn = self.attn2(self.norm2(block_4_pre_dense), return_attn=True)
-        block_4_attn_dense = self.drop_path(block_4_dense_out)
-
+        block_4_attn_dense = self.drop_path(self.attn2(self.norm2(block_4_pre_dense)))
         # block_4, _ = self.dblock_4([block_3_add, block_4_pre_dense])
         block_4, _ = self.dblock_4([block_3_add, block_4_attn_dense])    
         block_4_down = self.maxpool2(block_4)
@@ -520,20 +435,14 @@ class Diformer(nn.Module):
         block_5_pre_dense = self.pre_dense_5(block_4_down)
         
         # block_5, _ = self.dblock_5([block_4_add, block_5_pre_dense])
-        # block_5_attn_dense = self.drop_path(self.attn3(self.norm3(block_5_pre_dense)))
-        block_5_dense_out, block_5_attn = self.attn3(self.norm3(block_5_pre_dense), return_attn=True)
-        block_5_attn_dense = self.drop_path(block_5_dense_out)
-
+        block_5_attn_dense = self.drop_path(self.attn3(self.norm3(block_5_pre_dense)))
         block_5, _ = self.dblock_5([block_4_add, block_5_attn_dense]) 
         block_5_add = block_5 + block_4_side
 
         # Block 6
         block_6_pre_dense = self.pre_dense_6(block_5)
         # block_6, _ = self.dblock_6([block_5_add, block_6_pre_dense])
-        # block_6_attn_dense = self.drop_path(self.attn4(self.norm4(block_6_pre_dense)))
-        block_6_dense_out, block_6_attn = self.attn4(self.norm4(block_6_pre_dense), return_attn=True)
-        block_6_attn_dense = self.drop_path(block_6_dense_out)
-
+        block_6_attn_dense = self.drop_path(self.attn4(self.norm4(block_6_pre_dense)))
         block_6, _ = self.dblock_6([block_5_add, block_6_attn_dense])
         
         # upsampling blocks
@@ -545,18 +454,17 @@ class Diformer(nn.Module):
         out_6 = self.up_block_6(block_6)       
         
         results = [out_1, out_2, out_3, out_4, out_5, out_6]
-        attn_results = [block_3_attn, block_4_attn, block_5_attn, block_6_attn]
-
+  
         block_cat = torch.cat(results, dim=1)  
         results = self.block_cat(block_cat)   
-      
-        projected_features = self.feature_projection(results)
-        projected_initialization = self.feature_projection(results)
+        # # projected_features = self.feature_projection(results.mean(dim=[2, 3]))
+        # projected_features = self.feature_projection(results)
+        # projected_initialization = self.feature_projection(results)
         
-        if extract_features:
-            return projected_features
+        # if extract_features:
+        #     return projected_features
         
-        return results, attn_results
+        return results
 
     def get_projected_features(self, x):
         """
@@ -565,48 +473,25 @@ class Diformer(nn.Module):
         _, projected_features = self(x)
         return projected_features
     
-def print_model_structure(model):
-    # Print model architecture
-    print("Model Architecture:")
-    print(model)
-    
-    # Print number of parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    print("\nParameter Count:")
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    
-    # Print detailed parameter information for each layer
-    print("\nDetailed Parameter Information:")
-    for name, param in model.named_parameters():
-        print(f"{name}: {param.size()} = {param.numel():,} parameters")
-
 if __name__ == '__main__':
-    
-
-    # 1. Check for available GPUs
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Initialize model
-    # model = Diformer(dim=[8, 4, 4, 4], num_heads=2)
     model = Diformer(dim=[72, 36, 36, 36], num_heads=2)
-    print_model_structure(model)
-    # model = Diformer(dim=[64, 32, 32, 32], num_heads=2)
 
-    # 2. Check if multiple GPUs are available
+    # 2. Move model to device FIRST
+    model = model.to(device)
+
+    # 3. Then wrap with DataParallel if multiple GPUs
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs")
         model = DataParallel(model)
 
-    # 3. Move the model to GPUs (if available)
-    # model.to("cuda:0")
-
-    # Example of how to use this model:
-    # Input data (just an example, modify as per your needs)
-    input_tensor = torch.randn(8, 1, 16, 288).to(device)  # Batch size 8, single channel 256x256 image
+    # Input data - use device variable for consistency
+    print(device)
+    input_tensor = torch.randn(8, 1, 16, 288).to(device)
 
     # Forward pass
-    output, attn_results = model(input_tensor)
+    output = model(input_tensor)
     print(output.shape)
+
