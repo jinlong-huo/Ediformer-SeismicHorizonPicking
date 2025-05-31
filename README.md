@@ -318,7 +318,7 @@ If you use this code in your research, please cite:
 - **Google Drive**: [Paper PDF](https://drive.google.com/file/d/1HQQIZkRjQfuteo0zcAJ5NT2TxK3KuyfU/view?usp=drive_link)
 - **DexiNed**: [Dense Extreme Inception Network for edge detection](https://arxiv.org/abs/2112.02250) *(Modified for horizon picking)*
 - **Transformer Architecture**: [Attention mechanisms for computer vision](https://arxiv.org/abs/2205.12956) *(Dense blocks + mixer attention)*
-- **Ensemble Learning**: [Multi-attribute fusion approaches](https://ieeexplore.ieee.org/document/9709337) *(Ediformer + Sparse U-Net fusion)*
+- **Ensemble Learning**: [Multi-attribute fusion approaches](https://ieeexplore.ieee.org/document/9709337) *(Ensemble learning for multi-attribute)*
 
 ## 📄 License
 
