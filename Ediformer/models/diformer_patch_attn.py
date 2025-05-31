@@ -350,18 +350,69 @@ class Diformer(nn.Module):
         # tensor[..., :height, :width]
         return new_tensor
 
+    # def forward(self, x, extract_features=False): 
+    #     assert x.ndim == 4, x.shape
+       
+    #     block_1 = self.block_1(x)
+        
+    #     block_1_side = self.side_1(block_1)
+       
+    #     # Block 2
+    #     block_2 = self.block_2(block_1)
+        
+    #     block_2_down = self.maxpool(block_2)
+       
+    #     block_2_add = block_2_down + block_1_side  
+    #     block_2_side = self.side_2(block_2_add)
+        
+    #     # ============= ================
+    #     # -------update with mixer------
+    #     # ============= ================
+        
+    #     # # Block 3
+    #     block_3_pre_dense = self.pre_dense_3(block_2_down)
+    #     block_3_attn_dense = self.drop_path(self.attn1(self.norm1(block_3_pre_dense)))
+    #     #  block_3, _ = self.dblock_3([block_2_add, block_3_pre_dense]) original one
+    #     block_3, _ = self.dblock_3([block_2_add, block_3_attn_dense])    
+        
+    #     block_3_down = self.maxpool(block_3)  # last dimension dim//2       
+    #     block_3_add = block_3_down + block_2_side
+    #     block_3_side = self.side_3(block_3_add)
+      
+    #     # Block 4
+    #     block_4_pre_dense = self.pre_dense_4(block_3_down) # expand second dimension
+    #     block_4_attn_dense = self.drop_path(self.attn2(self.norm2(block_4_pre_dense)))
+    #     # block_4, _ = self.dblock_4([block_3_add, block_4_pre_dense])
+    #     block_4, _ = self.dblock_4([block_3_add, block_4_attn_dense])    
+    #     block_4_down = self.maxpool2(block_4)
+    #     block_4_add = block_4_down + block_3_side
+    #     block_4_side = self.side_4(block_4_add)
+
+    #     # Block 5
+    #     block_5_pre_dense = self.pre_dense_5(block_4_down)
+        
+    #     # block_5, _ = self.dblock_5([block_4_add, block_5_pre_dense])
+    #     block_5_attn_dense = self.drop_path(self.attn3(self.norm3(block_5_pre_dense)))
+    #     block_5, _ = self.dblock_5([block_4_add, block_5_attn_dense]) 
+    #     block_5_add = block_5 + block_4_side
+
+    #     # Block 6
+    #     block_6_pre_dense = self.pre_dense_6(block_5)
+    #     # block_6, _ = self.dblock_6([block_5_add, block_6_pre_dense])
+    #     block_6_attn_dense = self.drop_path(self.attn4(self.norm4(block_6_pre_dense)))
+    #     block_6, _ = self.dblock_6([block_5_add, block_6_attn_dense])
     def forward(self, x, extract_features=False): 
         assert x.ndim == 4, x.shape
-       
+    
         block_1 = self.block_1(x)
         
         block_1_side = self.side_1(block_1)
-       
+    
         # Block 2
         block_2 = self.block_2(block_1)
         
         block_2_down = self.maxpool(block_2)
-       
+    
         block_2_add = block_2_down + block_1_side  
         block_2_side = self.side_2(block_2_add)
         
@@ -369,39 +420,68 @@ class Diformer(nn.Module):
         # -------update with mixer------
         # ============= ================
         
-        # # Block 3
+        # Block 3 - Fix dimension handling
         block_3_pre_dense = self.pre_dense_3(block_2_down)
-        block_3_attn_dense = self.drop_path(self.attn1(self.norm1(block_3_pre_dense)))
-        #  block_3, _ = self.dblock_3([block_2_add, block_3_pre_dense]) original one
+        
+        # Convert to (B, H, W, C) format for LayerNorm and Mixer
+        B, C, H, W = block_3_pre_dense.shape
+        block_3_norm_input = block_3_pre_dense.permute(0, 2, 3, 1)  # (B, H, W, C)
+        
+        # Apply LayerNorm - now the last dimension should match
+        block_3_normed = self.norm1(block_3_norm_input)
+        
+        # Apply attention and convert back to (B, C, H, W)
+        block_3_attn_output = self.attn1(block_3_normed)  # Returns (B, H, W, C)
+        block_3_attn_dense = block_3_attn_output.permute(0, 3, 1, 2)  # Back to (B, C, H, W)
+        block_3_attn_dense = self.drop_path(block_3_attn_dense)
+        
         block_3, _ = self.dblock_3([block_2_add, block_3_attn_dense])    
         
         block_3_down = self.maxpool(block_3)  # last dimension dim//2       
         block_3_add = block_3_down + block_2_side
         block_3_side = self.side_3(block_3_add)
-      
-        # Block 4
-        block_4_pre_dense = self.pre_dense_4(block_3_down) # expand second dimension
-        block_4_attn_dense = self.drop_path(self.attn2(self.norm2(block_4_pre_dense)))
-        # block_4, _ = self.dblock_4([block_3_add, block_4_pre_dense])
+    
+        # Block 4 - Apply same fix
+        block_4_pre_dense = self.pre_dense_4(block_3_down)
+        
+        B, C, H, W = block_4_pre_dense.shape
+        block_4_norm_input = block_4_pre_dense.permute(0, 2, 3, 1)
+        block_4_normed = self.norm2(block_4_norm_input)
+        block_4_attn_output = self.attn2(block_4_normed)
+        block_4_attn_dense = block_4_attn_output.permute(0, 3, 1, 2)
+        block_4_attn_dense = self.drop_path(block_4_attn_dense)
+        
         block_4, _ = self.dblock_4([block_3_add, block_4_attn_dense])    
         block_4_down = self.maxpool2(block_4)
         block_4_add = block_4_down + block_3_side
         block_4_side = self.side_4(block_4_add)
 
-        # Block 5
+        # Block 5 - Apply same fix
         block_5_pre_dense = self.pre_dense_5(block_4_down)
         
-        # block_5, _ = self.dblock_5([block_4_add, block_5_pre_dense])
-        block_5_attn_dense = self.drop_path(self.attn3(self.norm3(block_5_pre_dense)))
+        B, C, H, W = block_5_pre_dense.shape
+        block_5_norm_input = block_5_pre_dense.permute(0, 2, 3, 1)
+        block_5_normed = self.norm3(block_5_norm_input)
+        block_5_attn_output = self.attn3(block_5_normed)
+        block_5_attn_dense = block_5_attn_output.permute(0, 3, 1, 2)
+        block_5_attn_dense = self.drop_path(block_5_attn_dense)
+        
         block_5, _ = self.dblock_5([block_4_add, block_5_attn_dense]) 
         block_5_add = block_5 + block_4_side
 
-        # Block 6
+        # Block 6 - Apply same fix
         block_6_pre_dense = self.pre_dense_6(block_5)
-        # block_6, _ = self.dblock_6([block_5_add, block_6_pre_dense])
-        block_6_attn_dense = self.drop_path(self.attn4(self.norm4(block_6_pre_dense)))
+        
+        B, C, H, W = block_6_pre_dense.shape
+        block_6_norm_input = block_6_pre_dense.permute(0, 2, 3, 1)
+        block_6_normed = self.norm4(block_6_norm_input)
+        block_6_attn_output = self.attn4(block_6_normed)
+        block_6_attn_dense = block_6_attn_output.permute(0, 3, 1, 2)
+        block_6_attn_dense = self.drop_path(block_6_attn_dense)
+        
         block_6, _ = self.dblock_6([block_5_add, block_6_attn_dense])
         
+        # ... rest of the forward method remains the same    
         # upsampling blocks
         out_1 = self.up_block_1(block_1)
         out_2 = self.up_block_2(block_2)
@@ -411,9 +491,10 @@ class Diformer(nn.Module):
         out_6 = self.up_block_6(block_6)       
         
         results = [out_1, out_2, out_3, out_4, out_5, out_6]
-  
+
         block_cat = torch.cat(results, dim=1)  
         results = self.block_cat(block_cat)   
+        
         # # projected_features = self.feature_projection(results.mean(dim=[2, 3]))
         # projected_features = self.feature_projection(results)
         # projected_initialization = self.feature_projection(results)

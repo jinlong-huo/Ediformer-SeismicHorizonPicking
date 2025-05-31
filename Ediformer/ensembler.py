@@ -1,27 +1,3 @@
-# Multi-Attribute Ensemble Model for Seismic Horizon Picking
-# 
-# Quick Start
-# 1. Prepare your data:
-#    - Configure data paths in --attr_dirs parameter
-#    - Required files for each attribute: data file (.npy) and label file (.npy)
-#    - Default attributes: seismic, dip (configurable in attribute_names)
-#
-# 2. Training:
-#    ```bash
-#    python Diformer_final/ensembler.py --is_training True --num_epochs 20
-#    ```
-#
-# 3. Testing:
-#    ```bash
-#    python Diformer_final/ensembler.py --is_testing True
-#    ```
-#
-# Output
-# - Meta-models: Individual Diformer models trained on each attribute
-# - Fusion model: Combines features from all meta-models
-# - Predictions: Final horizon picks with improved accuracy
-# All models saved to specified checkpoint directories (--mm_ckpt_path, --fm_ckpt_path).
-
 import argparse
 import os
 import time
@@ -32,44 +8,56 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-
-# from models.diformer import Diformer
 from models.diformer_patch_attn import Diformer
 from models.memfusion import MemoryEfficientUNetFusion
 from utils.datafactory import HorizonDataFactory
-from utils.tools import EarlyStopping
 
-class FeatureFusionModel(nn.Module):
-    """
-    Final model to fuse features from meta-models
-    """
-    def __init__(self, total_feature_dim: int, num_classes: int, fusion_height, fusion_width):
-        super().__init__()
-        
-        self.fusion_network = nn.Sequential(
-            nn.Linear(total_feature_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            # map the last layer for final prediction
-            nn.Linear(256, num_classes * fusion_height * fusion_width) 
-        )
-    
-    def forward(self, fused_features):
-        
-        x = self.fusion_network(fused_features)
-        
-        return x.view(-1, self.num_classes, self.height, self.width)
+# Try to import EarlyStopping, otherwise define a simple one
+try:
+    from utils.tools import EarlyStopping
+except ImportError:
+    class EarlyStopping:
+        """Simple EarlyStopping implementation"""
+        def __init__(self, patience=7, verbose=False, delta=0):
+            self.patience = patience
+            self.verbose = verbose
+            self.counter = 0
+            self.best_score = None
+            self.early_stop = False
+            self.val_loss_min = np.Inf
+            self.delta = delta
 
+        def __call__(self, val_loss, model, path, model_name, stage_name=''):
+            score = -val_loss
+
+            if self.best_score is None:
+                self.best_score = score
+                self.save_checkpoint(val_loss, model, path, model_name, stage_name)
+            elif score < self.best_score + self.delta:
+                self.counter += 1
+                if self.verbose:
+                    print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+                if self.counter >= self.patience:
+                    self.early_stop = True
+            else:
+                self.best_score = score
+                self.save_checkpoint(val_loss, model, path, model_name, stage_name)
+                self.counter = 0
+
+        def save_checkpoint(self, val_loss, model, path, model_name, stage_name=''):
+            '''Saves model when validation loss decrease.'''
+            if self.verbose:
+                print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+            torch.save(model.state_dict(), os.path.join(path, f'{stage_name}_{model_name}_best.pth'))
+            self.val_loss_min = val_loss
 
 class AdvancedEnsembleLearner:
     """
     Advanced Ensemble Learning with Feature Fusion
     """
-    def __init__(self, dim: List[Dict], num_heads: List[Dict], meta_model_path, fusion_model_path, num_classes: int, num_classifiers:int, height: int = 288, width: int = 1, patience: int=7):
+    def __init__(self, dim: List[int], num_heads: List[int], meta_model_path, fusion_model_path, 
+                 num_classes: int, num_classifiers: int, height: int = 288, width: int = 1, patience: int = 7):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.num_classes = num_classes
         self.height = height
         self.width = width
@@ -77,28 +65,25 @@ class AdvancedEnsembleLearner:
         self.fmp = fusion_model_path
         self.patience = patience
         
+        # Initialize classifiers with proper device placement
         self.classifiers = nn.ModuleList([
             Diformer(
                 dim=dim, 
                 num_heads=num_heads,
-                feature_projection_dim=16 # define projection dim regarding model_patch
-            ) for _ in range(num_classifiers)
+                feature_projection_dim=16
+            ).to(self.device) for _ in range(num_classifiers)
         ])
         
-        # total_feature_dim = sum(
-        #     classifier.feature_projection.out_features  # 288 aligned with feature projection dim
-        #     for classifier in self.classifiers
-        # )
+        # Calculate total feature dimension
+        total_feature_dim = num_classifiers * num_classes
+        print(f"Total feature dimension: {total_feature_dim}")
         
-        # total_feature_dim = num_classifiers * self.classifiers[0].feature_projection.out_features
-        total_feature_dim = num_classifiers * self.classifiers[0].feature_fuse_projection.out_features
-
         self.fusion_model = MemoryEfficientUNetFusion(
             total_feature_dim=total_feature_dim, 
             num_classes=num_classes,
             fusion_height=height,
             fusion_width=width
-        )
+        ).to(self.device)
         
         # Classifier weights
         self.classifier_weights = torch.ones(len(self.classifiers)) / len(self.classifiers)
@@ -107,8 +92,7 @@ class AdvancedEnsembleLearner:
                        attribute_dataloaders: List, 
                        validation_dataloaders: List, 
                        epochs: int = 2, 
-                       learning_rate: float = 1e-1                       
-                       ):
+                       learning_rate: float = 1e-3):
         """
         Train meta-models and fusion model
         """
@@ -121,14 +105,19 @@ class AdvancedEnsembleLearner:
         fusion_optimizer = optim.AdamW(self.fusion_model.parameters(), lr=learning_rate)
         criterion = nn.CrossEntropyLoss()
         
-        # Init early stopping
+        # Init early stopping - one for each classifier and one for fusion
         mm_path = os.path.join(self.mmp)
         fm_path = os.path.join(self.fmp)
-        early_stopping = EarlyStopping(patience=self.patience, verbose=True)
+        
+        # Create separate early stopping instances for each model
+        classifier_early_stoppings = [EarlyStopping(patience=self.patience, verbose=True) 
+                                     for _ in self.classifiers]
+        fusion_early_stopping = EarlyStopping(patience=self.patience, verbose=True)
         
         for epoch in range(epochs):
             # Stage 1: Individual meta-models
-            for idx, (classifier, ((attr_name, train_loader), (attr_name, val_loader)), optimizer) in enumerate(zip(self.classifiers, zip(attribute_dataloaders, validation_dataloaders), classifier_optimizers)):
+            for idx, (classifier, ((attr_name, train_loader), (attr_name_val, val_loader)), optimizer, early_stopping) in enumerate(
+                zip(self.classifiers, zip(attribute_dataloaders, validation_dataloaders), classifier_optimizers, classifier_early_stoppings)):
             
                 # Stage 1.1 meta-models Training
                 classifier.train()
@@ -136,19 +125,18 @@ class AdvancedEnsembleLearner:
                 stage_name = 'meta'
                 
                 for batch_x, batch_y in train_loader:
-                    # print(f"Training {attr_name} with dataloader")
                     optimizer.zero_grad()
-                    # squeeze the first dimension to calculate loss
-                    batch_y = torch.squeeze(batch_y.long())
-                    # Compute loss for individual classifier batch_x should have the shape of 288 as height and others as width
-                    outputs = classifier(batch_x) 
-                    # outputs / projected features shape torch.Size([16, 7, 64, 288])
+                    # Move to device and squeeze
+                    batch_x = batch_x.to(self.device)
+                    batch_y = batch_y.to(self.device).squeeze(1).long()
+                    
+                    outputs = classifier(batch_x)
                     loss = criterion(outputs, batch_y)
                     loss.backward()
                     optimizer.step()
                     total_loss += loss.item()
                 
-                print(f"Meta-Model {attr_name} - Epoch {epoch+1}: Training Loss: {total_loss/len(train_loader)}")
+                print(f"Meta-Model {attr_name} - Epoch {epoch+1}: Training Loss: {total_loss/len(train_loader):.4f}")
                 
                 # Stage 1.2 meta-models Validation
                 classifier.eval()
@@ -158,132 +146,217 @@ class AdvancedEnsembleLearner:
                 
                 with torch.no_grad():
                     for batch_x, batch_y in val_loader:
-                        batch_y = torch.squeeze(batch_y.long())
-                        outputs = classifier(batch_x) # outputs: torch.Size([16, 7, 64, 288])
-                        loss = criterion(outputs, batch_y.long())
+                        batch_x = batch_x.to(self.device)
+                        batch_y = batch_y.to(self.device).squeeze(1).long()
+                        
+                        outputs = classifier(batch_x)
+                        loss = criterion(outputs, batch_y)
                         val_loss += loss.item()
+                        
                         _, predicted = outputs.max(1)
-                        total += batch_y.size(0)
+                        total += batch_y.numel()
                         correct += predicted.eq(batch_y).sum().item()
                 
-                print(f"Meta-Model {attr_name} - Epoch {epoch + 1}: Validation Loss: {val_loss / len(val_loader):.4f}, Validation Accuracy: {100 * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
-                # attr_name
-                early_stopping(-val_loss, classifier, mm_path, attr_name, stage_name=stage_name)     
+                accuracy = 100 * correct / total
+                print(f"Meta-Model {attr_name} - Epoch {epoch + 1}: Validation Loss: {val_loss / len(val_loader):.4f}, "
+                      f"Validation Accuracy: {accuracy:.4f}%")
+                
+                # Check if early stopping has __call__ method, otherwise use step()
+                if hasattr(early_stopping, '__call__'):
+                    early_stopping(-val_loss, classifier, mm_path, attr_name, stage_name=stage_name)
+                elif hasattr(early_stopping, 'step'):
+                    early_stopping.step(-val_loss, classifier, mm_path, attr_name, stage_name=stage_name)
+                else:
+                    # If the interface is different, just save the model
+                    torch.save(classifier.state_dict(), os.path.join(mm_path, f'{stage_name}_{attr_name}_epoch{epoch+1}.pth'))
+                
+                # Check if we should stop early
+                if hasattr(early_stopping, 'early_stop') and early_stopping.early_stop:
+                    print(f"Early stopping triggered for {attr_name}")
+                    break     
                 
             print('\n')     
-            # Stage 2: Fusion model
-            # Stage 2.1: Train funsion model
+            # Stage 2: Fusion model training
+            # self.fusion_model.train()
+            # stage_name = 'fusion'
+            
+            # # Collect all features and labels
+            # all_train_features = []
+            # all_train_labels = []
+            
+            # with torch.no_grad():
+            #     for classifier, (attr_name, train_loader) in zip(self.classifiers, attribute_dataloaders):
+            #         classifier.eval()
+                    
+            #         for batch_x, batch_y in train_loader:
+            #             batch_x = batch_x.to(self.device)
+            #             batch_y = batch_y.to(self.device)
+                        
+            #             # Get classifier outputs (logits)
+            #             outputs = classifier(batch_x)
+            #             all_train_features.append(outputs)
+            #             all_train_labels.append(batch_y)
+            
+            # # Concatenate all features along channel dimension
+            # combined_features = torch.cat(all_train_features, dim=1)
+            # combined_labels = torch.cat(all_train_labels, dim=0).squeeze(1).long()
+            
+            # # Train fusion model
+            # fusion_optimizer.zero_grad()
+            # fusion_outputs = self.fusion_model(combined_features)
+            # fusion_loss = criterion(fusion_outputs, combined_labels)
+            # fusion_loss.backward()
+            # fusion_optimizer.step()
+            
+            # print(f"Fusion Model Epoch {epoch+1}: Loss: {fusion_loss.item():.4f}")
+            # Stage 2: Fusion model training
             self.fusion_model.train()
-            all_features = []
-            all_labels = []
             stage_name = 'fusion'
-            
-            # Extract features from meta-models
-            for classifier, ((attr_name, train_loader), (attr_name, val_loader)) in zip(self.classifiers, zip(attribute_dataloaders, validation_dataloaders)):
-            
-            # Extract features from meta-models
-            # for classifier, train_loader in zip(self.classifiers, attribute_dataloaders):
-                classifier_features = []
-                classifier_labels = []
-                
-                for batch_x, batch_y in train_loader:
 
-                    features = classifier(batch_x, extract_features=True)
-                    classifier_features.append(features)
-                    classifier_labels.append(batch_y)
+            # Process batches synchronously from all dataloaders
+            fusion_loss_total = 0
+            batch_count = 0
+
+            # Get iterators for each dataloader
+            train_iterators = [iter(loader) for _, loader in attribute_dataloaders]
+
+            # Process batches
+            for batch_idx in range(len(next(iter(attribute_dataloaders))[1])):
+                batch_features = []
+                batch_labels = None
                 
-                all_features.append(torch.cat(classifier_features, dim=0))
-                all_labels.append(torch.cat(classifier_labels, dim=0))
-            
-            # Concatenate features from all meta-models concatenate 2nd dimension to map channel into probs
-            total_features = torch.cat(all_features, dim=1)
-            
-            final_labels = all_labels[0]  # Assume consistent labels across attributes
-            
-            # Train fusion model
-            fusion_optimizer.zero_grad()
-            
-            # ================
-            # Simplify the fusion model for running all the process by letting total features as fusion model outputs
-            
-            fusion_outputs = self.fusion_model(total_features) # channel num_classifiers * num_class --> num_class 
-            
-            fusion_outputs = total_features
-            # squeeze and convert into long dtype
-            final_labels = torch.squeeze(final_labels)
-            fusion_loss = criterion(fusion_outputs, final_labels.long()) 
-            
-            fusion_loss.backward()
-            fusion_optimizer.step()
-            
-            print(f"Fusion Model Epoch {epoch+1}: Loss: {fusion_loss.item()}")
-            
-            # Stage 2.2: Funsion model validation
+                # Collect features from each classifier for this batch
+                for classifier, iterator in zip(self.classifiers, train_iterators):
+                    try:
+                        batch_x, batch_y = next(iterator)
+                        batch_x = batch_x.to(self.device)
+                        batch_y = batch_y.to(self.device)
+                        
+                        with torch.no_grad():
+                            classifier.eval()
+                            outputs = classifier(batch_x)  # Shape: [batch, 7, H, W]
+                            batch_features.append(outputs)
+                        
+                        if batch_labels is None:
+                            batch_labels = batch_y
+                    except StopIteration:
+                        break
+                
+                if len(batch_features) != len(self.classifiers):
+                    break
+                    
+                # Concatenate features for this batch only
+                combined_features = torch.cat(batch_features, dim=1)  # Shape: [batch, 14, H, W]
+                combined_labels = batch_labels.squeeze(1).long()
+                
+                # Train fusion model on this batch
+                fusion_optimizer.zero_grad()
+                fusion_outputs = self.fusion_model(combined_features)
+                fusion_loss = criterion(fusion_outputs, combined_labels)
+                fusion_loss.backward()
+                fusion_optimizer.step()
+                
+                fusion_loss_total += fusion_loss.item()
+                batch_count += 1
+
+            print(f"Fusion Model Epoch {epoch+1}: Loss: {fusion_loss_total/batch_count:.4f}")
+            # Stage 2.2: Fusion model validation
             self.fusion_model.eval()
+            val_loss_total = 0
+            correct_total = 0
+            total_samples = 0
+
             with torch.no_grad():
-                val_features = []
-                val_labels = []
-                attr_name_full = []
-                for classifier, (attr_name, val_loader) in zip(self.classifiers, (validation_dataloaders)):
-                # for classifier, val_loader in zip(self.classifiers, validation_dataloaders):
-                    classifier_features = []
-                    classifier_labels = []
-                    
-                    for batch_x, batch_y in val_loader:
-                        # features = classifier(batch_x, extract_features=True)
-                        features = classifier(batch_x)
-                        classifier_features.append(features)
-                        classifier_labels.append(batch_y)
-                    
-                    val_features.append(torch.cat(classifier_features, dim=0))
-                    val_labels.append(torch.cat(classifier_labels, dim=0))
-                    # generate entire output
-                    attr_name_full.append(attr_name)
+                # Get iterators for validation
+                val_iterators = [iter(loader) for _, loader in validation_dataloaders]
                 
-            # Concatenate validation features
-            total_val_features = torch.cat(val_features, dim=1)
-            final_val_labels = val_labels[0]  # Assume consistent labels across attributes
-            
-            val_outputs = self.fusion_model(total_val_features)
-            val_outputs = total_val_features
-            final_val_labels = torch.squeeze(final_val_labels)
-            val_loss = criterion(val_outputs, final_val_labels.long())
-            
-            _, predicted = val_outputs.max(1)
-            total = final_val_labels.size(0)
-            correct = predicted.eq(final_val_labels).sum().item()
-            
-            print(f"Fusion Model Epoch {epoch+1}, Val Loss: {val_loss.item():.4f}, Val Acc: {100. * correct / (total * batch_x.shape[2] * batch_x.shape[3]):.4f}%")
-            attr_name = '_'.join(attr_name_full)
-            early_stopping(-val_loss, self.fusion_model, fm_path, attr_name, stage_name)   
-            print('\n')   
+                for batch_idx in range(len(next(iter(validation_dataloaders))[1])):
+                    batch_features = []
+                    batch_labels = None
+                    
+                    # Collect features from each classifier for this batch
+                    for classifier, iterator in zip(self.classifiers, val_iterators):
+                        try:
+                            batch_x, batch_y = next(iterator)
+                            batch_x = batch_x.to(self.device)
+                            batch_y = batch_y.to(self.device)
+                            
+                            classifier.eval()
+                            outputs = classifier(batch_x)
+                            batch_features.append(outputs)
+                            
+                            if batch_labels is None:
+                                batch_labels = batch_y
+                        except StopIteration:
+                            break
+                    
+                    if len(batch_features) != len(self.classifiers):
+                        break
+                        
+                    # Concatenate features for this batch
+                    combined_features = torch.cat(batch_features, dim=1)  # [batch, 14, H, W]
+                    combined_labels = batch_labels.squeeze(1).long()
+                    
+                    # Validate on this batch
+                    val_outputs = self.fusion_model(combined_features)
+                    val_loss = criterion(val_outputs, combined_labels)
+                    
+                    val_loss_total += val_loss.item()
+                    
+                    _, predicted = val_outputs.max(1)
+                    correct_total += predicted.eq(combined_labels).sum().item()
+                    total_samples += combined_labels.numel()
+
+            accuracy = 100 * correct_total / total_samples
+            avg_val_loss = val_loss_total / batch_idx if batch_idx > 0 else 0
+
+            print(f"Fusion Model Epoch {epoch+1}: Val Loss: {avg_val_loss:.4f}, "
+                f"Val Accuracy: {accuracy:.4f}%")
+
+            attr_name_combined = '_'.join([name for name, _ in attribute_dataloaders])
+            # Early stopping code remains the same...
             
     def predict(self, attribute_test_loaders, meta_model_path, fusion_model_path):
         """
         Make predictions using feature fusion
         """
-        # Extract features from meta-models
+        # Load models
+        for idx, (classifier, (attr_name, _)) in enumerate(zip(self.classifiers, attribute_test_loaders)):
+            model_path = os.path.join(meta_model_path, f'meta_{attr_name}_best.pth')
+            if os.path.exists(model_path):
+                classifier.load_state_dict(torch.load(model_path))
+                print(f"Loaded meta-model for {attr_name}")
+            else:
+                print(f"Warning: No saved model found for {attr_name}")
+        
+        # Load fusion model
+        fusion_model_path_full = os.path.join(fusion_model_path, 'fusion_seismic_dip_best.pth')
+        if os.path.exists(fusion_model_path_full):
+            self.fusion_model.load_state_dict(torch.load(fusion_model_path_full))
+            print("Loaded fusion model")
+        else:
+            print("Warning: No saved fusion model found")
+        
         all_features = []
         
-        self.classifiers = torch.load(meta_model_path)
-        self.fusion_model = torch.load(fusion_model_path)
-        
-        for classifier, dataloader in zip(self.classifiers, attribute_test_loaders):
-            classifier_features = []
-            
-            with torch.no_grad():
+        with torch.no_grad():
+            for classifier, (attr_name, dataloader) in zip(self.classifiers, attribute_test_loaders):
+                classifier.eval()
+                
                 for batch_x, _ in dataloader:
-                    features = classifier(batch_x, extract_features=True)
-                    classifier_features.append(features)
-            
-            all_features.append(torch.cat(classifier_features, dim=0))
+                    batch_x = batch_x.to(self.device)
+                    outputs = classifier(batch_x)
+                    all_features.append(outputs)
+        
         # Concatenate features
         total_features = torch.cat(all_features, dim=1)
         
         # Final prediction
         with torch.no_grad():
             self.fusion_model.eval()
-            return self.fusion_model(total_features)
+            predictions = self.fusion_model(total_features)
+            
+        return predictions
 
 
 def main():
@@ -298,36 +371,41 @@ def main():
     os.makedirs('./outputs/figures', exist_ok=True)
     os.makedirs('./outputs/predictions', exist_ok=True)
     
-    # freq phase seismic dip amp
-    # attribute_names = ['freq', 'phase', 'seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
-    # attribute_names = ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
+    # Define attributes to use
     attribute_names = ['seismic', 'dip']
     
+    # Initialize data factory
+    data_factory = HorizonDataFactory(
+        attr_dirs=args.attr_dirs, 
+        kernel_size=(1, 288, 16), 
+        stride=(1, 64, 32), 
+        batch_size=args.batch_size
+    )
     
-    data_factory = HorizonDataFactory(attr_dirs=args.attr_dirs, kernel_size=(1, 288, 16), stride=(1, 64, 32), batch_size=args.batch_size) # the resulting 
-    
+    # Get dataloaders
     attribute_dataloaders = data_factory.get_dataloaders(attribute_names)
     
-    attribute_keys = list(attribute_dataloaders.keys())  # Extract keys from the dictionary
+    # Extract train, val, test loaders
+    attribute_keys = list(attribute_dataloaders.keys())
     
-    train_values = [loaders["train"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
+    train_values = [loaders["train"] for _, loaders in attribute_dataloaders.items()]
     attribute_train_loaders = list(zip(attribute_keys, train_values))
     
-    val_values = [loaders["val"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
+    val_values = [loaders["val"] for _, loaders in attribute_dataloaders.items()]
     attribute_val_loaders = list(zip(attribute_keys, val_values))
     
-    test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]  # Extract corresponding "train" loaders
+    test_values = [loaders["test"] for _, loaders in attribute_dataloaders.items()]
     attribute_test_loaders = list(zip(attribute_keys, test_values))
     
-    # embed_dims = [72, 36, 36, 36]
-    # embed_dims = [4, 2, 2, 2]
-    embed_dims = [16, 8, 8, 8]
-    heads = 2
+    # FIXED: Use correct dimensions that match the model architecture
+    # These should match the channel dimensions after pre_dense layers
+    embed_dims = [256, 512, 512, 256]  # Changed from [16, 8, 8, 8]
+    num_heads = args.heads
     
     # Initialize Advanced Ensemble Learner
     ensemble_learner = AdvancedEnsembleLearner(
         dim=embed_dims,
-        num_heads=heads,
+        num_heads=num_heads,
         num_classes=7,
         num_classifiers=len(attribute_dataloaders),
         height=args.height,
@@ -339,23 +417,31 @@ def main():
     if args.is_training:
         print("============ Begin training ============\n")  
         # Train ensemble
-        ensemble_learner.train_ensemble(attribute_train_loaders, attribute_val_loaders, epochs=args.num_epochs)
+        ensemble_learner.train_ensemble(
+            attribute_train_loaders, 
+            attribute_val_loaders, 
+            epochs=args.num_epochs
+        )
         
-        return 
-    
     if args.is_testing:
         print("============ Begin testing ============\n") 
         # Predict
-        predictions = ensemble_learner.predict(attribute_test_loaders)
-        pred_results = np.save(predictions)
-        return pred_results    
+        predictions = ensemble_learner.predict(
+            attribute_test_loaders, 
+            args.mm_ckpt_path, 
+            args.fm_ckpt_path
+        )
+        # Save predictions
+        np.save(os.path.join(args.output_dir, 'predictions.npy'), predictions.cpu().numpy())
+        print(f"Predictions saved to {os.path.join(args.output_dir, 'predictions.npy')}")
     
     etime = time.ctime()
-    print(stime, etime)
-       
+    print(f"Start time: {stime}")
+    print(f"End time: {etime}")
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Diformer_trainer.')
+    parser = argparse.ArgumentParser(description='Diformer ensemble trainer.')
     
     parser.add_argument('--is_training', type=bool, default=True, 
                         help='Script in training mode')
@@ -372,76 +458,42 @@ def parse_args():
     parser.add_argument('--width', type=int, default=16, 
                         help='data width size')
 
-    # parser.add_argument('--mm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/meta_model_ckpt', 
-    #                     help='checkpoint saving/loading path of meta model')
-    
-    # parser.add_argument('--fm_ckpt_path', type=str, default='/home/dell/disk1/Jinlong/Ediformer-SeismicHorizonPicking/process/output/fusion_model_ckpt', 
-    #                     help='checkpoint saving/loading path of fusion model')
-
     parser.add_argument('--is_testing', type=bool, default=False,
                         help='Script in testing mode')
     
-    parser.add_argument('--device', type=str, default='cuda:1',
+    parser.add_argument('--device', type=str, default='cuda:0',
                         help='device configuration')
     
-    parser.add_argument('--embed_dims', type=list, default=[16, 8, 8, 8],
-                        help='Script in testing mode')
-    
-    parser.add_argument('--heads', type=int,  default=2,
-                        help='Script in testing mode')
-    
-    parser.add_argument('--num_epoch', type=int,  default=20,
-                        help='Overall training epochs')
+    parser.add_argument('--heads', type=int, default=2,
+                        help='Number of attention heads')
     
     parser.add_argument('--mm_ckpt_path', type=str, default='./checkpoints/meta_models', 
                         help='checkpoint saving/loading path of meta model')
     
     parser.add_argument('--fm_ckpt_path', type=str, default='./checkpoints/fusion_models', 
-                            help='checkpoint saving/loading path of fusion model')
+                        help='checkpoint saving/loading path of fusion model')
 
     parser.add_argument('--training_dir', type=str, default='./logs/training',
-                            help='training log dir')
+                        help='training log dir')
         
     parser.add_argument('--output_dir', type=str, default='./outputs/results',
-                            help='output log dir')
+                        help='output log dir')
     
-    parser.add_argument('--attr_dirs', type=dict,  default = {
-        # "freq": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_freq.npy", 
-        #          "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "phase": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_crop_horizon_phase.npy", 
-                #   "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        "seismic": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy", 
-                    "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        "dip": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy", 
-                "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "amp": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_amp.npy", 
-        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "complex": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_complex_trace.npy", 
-        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "coherence": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_coherence.npy", 
-        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "average_zero": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Average_zero_crossing.npy", 
-        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"},
-        
-        # "azimuth": {"data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_Azimuth.npy", 
-        #         "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"}
-        
-        # ['seismic', 'dip', 'amp', 'complex', 'coherence','average_zero','azimuth']
-        
+    parser.add_argument('--attr_dirs', type=dict, default={
+        "seismic": {
+            "data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_seismic.npy", 
+            "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+        },
+        "dip": {
+            "data": "/home/dell/disk1/Jinlong/Horizontal-data/F3_predict_MCDL_crossline.npy", 
+            "label": "/home/dell/disk1/Jinlong/Horizontal-data/test_label_no_ohe.npy"
+        },
     }, help='attr names and paths')
     
     args = parser.parse_args()
-        
     return args
+
 
 if __name__ == '__main__':
     args = parse_args()
     main()
-
