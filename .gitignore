@@ -204,10 +204,12 @@ lightning_logs/
 # !Ediformer/
 # !Ediformer/**
 Ediformer/__pycache__/
+Ediformer/utils/** */
 # Keep utility scripts but ignore GLCM subdirectory
-!utils/
-!utils/**
+# !utils/
+# !utils/**
 utils/GLCM/
+utils/** */
 
 # Keep documentation
 !docs/
