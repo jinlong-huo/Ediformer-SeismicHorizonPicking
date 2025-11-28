@@ -319,7 +319,7 @@ If you use this code in your research, please cite:
 - **DexiNed**: [Dense Extreme Inception Network for edge detection](https://arxiv.org/abs/2112.02250) *(Modified for horizon picking)*
 - **Transformer Architecture**: [Attention mechanisms for computer vision](https://arxiv.org/abs/2205.12956) *(Dense blocks + mixer attention)*
 - **Ensemble Learning**: [Multi-attribute fusion approaches](https://ieeexplore.ieee.org/document/9709337) *(Ensemble learning for multi-attribute)*
-
+- **Data Source**: [F3 Dataset](http://www.opendtect.org/osr/Main/NetherlandsOffshoreF3BlockSeismicOnly494MB) *(dGB open source)*
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
